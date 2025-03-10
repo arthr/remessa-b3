@@ -15,6 +15,7 @@ Esta aplicação foi desenvolvida para automatizar o processo de geração de ar
 - Acesso a arquivos de backup anteriores
 - Verificação automática de atualizações
 - Configuração via arquivo .env
+- Splash Screen durante inicialização
 - Interface gráfica moderna e intuitiva
 - Feedback visual do progresso
 - Tratamento de erros
@@ -30,6 +31,8 @@ Esta aplicação foi desenvolvida para automatizar o processo de geração de ar
 ```
 remessa-b3/
 ├── app.py                  # Arquivo principal da aplicação
+├── create_splash.py        # Script para criar imagem de splash
+├── splashLogo.png          # Imagem da splash screen
 ├── requirements.txt        # Dependências do projeto
 ├── favicon-b3.ico          # Ícone da aplicação
 ├── remessa-b3.spec         # Configuração do PyInstaller
@@ -78,6 +81,12 @@ remessa-b3/
    # Especialmente as credenciais do banco de dados
    ```
 
+6. Crie a imagem de splash (opcional):
+   ```
+   # Se você não tiver uma imagem personalizada
+   python create_splash.py
+   ```
+
 ## Uso
 
 1. Com o ambiente virtual ativado, execute a aplicação:
@@ -114,6 +123,19 @@ O arquivo `.env` contém todas as configurações da aplicação:
 - **Layout B3**: Configurações específicas para o layout de arquivo B3
 
 Para configurar, copie o arquivo `.env.example` para `.env` e edite conforme necessário.
+
+## Personalização da Splash Screen
+
+A Splash Screen exibe a imagem `splashLogo.png` durante a inicialização da aplicação. Para personalizar:
+
+1. Crie uma imagem PNG com fundo transparente
+2. Nomeie como `splashLogo.png`
+3. Coloque na pasta raiz do projeto
+
+Alternativamente, use o script `create_splash.py` para gerar uma imagem básica:
+```
+python create_splash.py
+```
 
 ## Compilação
 

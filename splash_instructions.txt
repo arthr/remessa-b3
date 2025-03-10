@@ -1,0 +1,48 @@
+# Instruções para a Imagem de Splash
+
+Para que a Splash Screen funcione corretamente, você precisa criar ou obter uma imagem chamada "splashLogo.png" e colocá-la na pasta raiz do projeto.
+
+## Requisitos da Imagem:
+- Nome do arquivo: splashLogo.png
+- Formato: PNG com transparência
+- Tamanho recomendado: 400x300 pixels (você pode ajustar conforme necessário)
+- Fundo: Transparente
+
+## Opções para obter a imagem:
+
+1. **Criar uma imagem personalizada**:
+   - Use um software de design como Adobe Photoshop, GIMP ou Canva
+   - Crie um logo com o nome "Remessa B3" e elementos visuais relacionados
+   - Exporte como PNG com fundo transparente
+
+2. **Usar o logo da B3**:
+   - Você pode baixar o logo oficial da B3 do site deles
+   - Adicione o texto "Remessa B3" ao lado
+   - Certifique-se de respeitar os direitos autorais e uso da marca
+
+3. **Usar um template**:
+   - Existem vários templates gratuitos disponíveis online
+   - Personalize com o nome da sua aplicação
+
+## Exemplo de código para criar uma imagem básica com PIL:
+
+```python
+from PIL import Image, ImageDraw, ImageFont
+
+# Criar uma imagem transparente
+img = Image.new('RGBA', (400, 300), color=(255, 255, 255, 0))
+draw = ImageDraw.Draw(img)
+
+# Adicionar texto
+try:
+    font = ImageFont.truetype("arial.ttf", 36)
+except:
+    font = ImageFont.load_default()
+
+draw.text((200, 150), "Remessa B3", fill=(0, 0, 0, 255), font=font, anchor="mm")
+
+# Salvar a imagem
+img.save("splashLogo.png")
+```
+
+Coloque o arquivo "splashLogo.png" na mesma pasta do arquivo app.py para que a Splash Screen funcione corretamente. 
