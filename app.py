@@ -3,6 +3,7 @@ import re
 import pyodbc
 import os
 import unicodedata
+import shutil
 from datetime import datetime
 from tkinter import Tk, ttk, filedialog, messagebox
 import tkinter as tk
@@ -300,6 +301,11 @@ def interface():
     arquivo_salvo = [None]
     historico_operacoes = []
     
+    # Criar pasta de backups se não existir
+    backup_dir = Path("backups")
+    if not backup_dir.exists():
+        backup_dir.mkdir()
+    
     def salvar_historico():
         """Salva o histórico de operações em um arquivo JSON"""
         try:
@@ -317,6 +323,147 @@ def interface():
         except Exception as e:
             print(f"Erro ao carregar histórico: {e}")
         return []
+    
+    def fazer_backup_arquivo(arquivo_original, bordero):
+        """Cria uma cópia do arquivo gerado na pasta de backups"""
+        try:
+            if not arquivo_original:
+                return None
+                
+            # Garantir que o nome do arquivo seja seguro para o sistema de arquivos
+            bordero_seguro = re.sub(r'[^\w\-_]', '_', bordero)
+            
+            # Obter a extensão do arquivo original
+            _, ext = os.path.splitext(arquivo_original)
+            
+            # Criar nome do arquivo de backup com timestamp para evitar sobrescrever
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup_filename = f"bordero_{bordero_seguro}_{timestamp}{ext}"
+            backup_path = backup_dir / backup_filename
+            
+            # Copiar o arquivo
+            shutil.copy2(arquivo_original, backup_path)
+            
+            return str(backup_path)
+        except Exception as e:
+            atualizar_status(f"Erro ao criar backup: {e}", "error")
+            return None
+    
+    def limpar_historico_e_backups():
+        """Limpa o histórico de operações e os arquivos de backup"""
+        try:
+            # Confirmar com o usuário
+            resposta = messagebox.askyesno(
+                "Confirmar Exclusão", 
+                "Isso excluirá todo o histórico de operações e todos os arquivos de backup. Continuar?"
+            )
+            
+            if not resposta:
+                return
+                
+            # Limpar histórico
+            historico_operacoes.clear()
+            atualizar_lista_historico()
+            salvar_historico()
+            
+            # Limpar arquivos de backup
+            for arquivo in backup_dir.glob("*"):
+                if arquivo.is_file():
+                    arquivo.unlink()
+                    
+            atualizar_status("Histórico e backups limpos com sucesso!", "success")
+        except Exception as e:
+            atualizar_status(f"Erro ao limpar histórico e backups: {e}", "error")
+    
+    def abrir_backup():
+        """Abre a janela para selecionar e abrir um arquivo de backup"""
+        try:
+            # Verificar se existem backups
+            backups = list(backup_dir.glob("*"))
+            if not backups:
+                messagebox.showinfo("Informação", "Não há arquivos de backup disponíveis.")
+                return
+                
+            # Criar janela de seleção
+            backup_window = tk.Toplevel(root)
+            backup_window.title("Selecionar Arquivo de Backup")
+            backup_window.geometry("600x400")
+            backup_window.transient(root)
+            backup_window.grab_set()
+            
+            # Centralizar a janela
+            centralizar_janela(backup_window, 600, 400)
+            
+            # Frame principal
+            main_frame = ttk.Frame(backup_window, padding=10)
+            main_frame.pack(fill=tk.BOTH, expand=True)
+            
+            # Label de instrução
+            ttk.Label(main_frame, text="Selecione um arquivo de backup para abrir:", 
+                     font=("Segoe UI", 10)).pack(pady=5, anchor="w")
+            
+            # Frame para a lista com scrollbar
+            list_frame = ttk.Frame(main_frame)
+            list_frame.pack(fill=tk.BOTH, expand=True, pady=5)
+            
+            # Scrollbar
+            scrollbar = ttk.Scrollbar(list_frame)
+            scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+            
+            # Lista de backups
+            backup_listbox = tk.Listbox(list_frame, yscrollcommand=scrollbar.set, font=("Segoe UI", 9))
+            backup_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+            scrollbar.config(command=backup_listbox.yview)
+            
+            # Preencher a lista com os arquivos de backup (mais recentes primeiro)
+            backups_sorted = sorted(backups, key=os.path.getmtime, reverse=True)
+            for backup in backups_sorted:
+                # Formatar a data de modificação
+                mod_time = datetime.fromtimestamp(os.path.getmtime(backup))
+                mod_time_str = mod_time.strftime("%d/%m/%Y %H:%M:%S")
+                
+                # Extrair o número do borderô do nome do arquivo
+                nome_arquivo = backup.name
+                match = re.search(r'bordero_(\w+)_', nome_arquivo)
+                bordero_num = match.group(1) if match else "N/A"
+                
+                # Adicionar à lista
+                backup_listbox.insert(tk.END, f"Borderô: {bordero_num} - {mod_time_str} - {nome_arquivo}")
+            
+            # Frame para botões
+            button_frame = ttk.Frame(main_frame)
+            button_frame.pack(fill=tk.X, pady=10)
+            
+            # Função para abrir o arquivo selecionado
+            def abrir_arquivo_selecionado():
+                selecionado = backup_listbox.curselection()
+                if not selecionado:
+                    messagebox.showinfo("Informação", "Selecione um arquivo para abrir.")
+                    return
+                    
+                # Obter o arquivo selecionado
+                arquivo_backup = backups_sorted[selecionado[0]]
+                
+                try:
+                    if os.name == 'nt':  # Windows
+                        os.startfile(arquivo_backup)
+                    elif os.name == 'posix':  # macOS ou Linux
+                        subprocess.call(('open' if sys.platform == 'darwin' else 'xdg-open', str(arquivo_backup)))
+                    
+                    backup_window.destroy()
+                    adicionar_historico(f"Arquivo de backup aberto: {arquivo_backup.name}")
+                except Exception as e:
+                    messagebox.showerror("Erro", f"Erro ao abrir o arquivo: {e}")
+            
+            # Botões
+            ttk.Button(button_frame, text="Abrir", command=abrir_arquivo_selecionado).pack(side=tk.LEFT, padx=5)
+            ttk.Button(button_frame, text="Cancelar", command=backup_window.destroy).pack(side=tk.LEFT, padx=5)
+            
+            # Duplo clique para abrir
+            backup_listbox.bind("<Double-1>", lambda e: abrir_arquivo_selecionado())
+            
+        except Exception as e:
+            atualizar_status(f"Erro ao abrir janela de backups: {e}", "error")
     
     def atualizar_status(mensagem, tipo="info"):
         """Atualiza a barra de status com uma mensagem e cor apropriada"""
@@ -408,10 +555,17 @@ def interface():
                     mostrar_progresso(80)
                     gerar_arquivo(dados, arquivo_nome)
                     arquivo_salvo[0] = arquivo_nome
+                    
+                    # Criar backup do arquivo
+                    backup_path = fazer_backup_arquivo(arquivo_nome, bordero)
+                    
                     abrir_botao.config(state="normal")
                     mostrar_progresso(100)
                     atualizar_status("Arquivo gerado com sucesso!", "success")
-                    adicionar_historico(f"Arquivo gerado: {arquivo_nome} (Borderô: {bordero})")
+                    
+                    # Adicionar ao histórico com informação do backup
+                    info_backup = f" (Backup: {os.path.basename(backup_path)})" if backup_path else ""
+                    adicionar_historico(f"Arquivo gerado: {arquivo_nome} (Borderô: {bordero}){info_backup}")
                 
             except Exception as e:
                 atualizar_status(f"Erro: {str(e)}", "error")
@@ -463,6 +617,8 @@ def interface():
     menu_bar.add_cascade(label="Arquivo", menu=arquivo_menu)
     arquivo_menu.add_command(label="Gerar Novo Arquivo", command=iniciar_geracao)
     arquivo_menu.add_command(label="Abrir Último Arquivo", command=abrir_arquivo)
+    arquivo_menu.add_command(label="Abrir Arquivo de Backup", command=abrir_backup)
+    arquivo_menu.add_command(label="Limpar Histórico e Backups", command=limpar_historico_e_backups)
     arquivo_menu.add_separator()
     arquivo_menu.add_command(label="Sair", command=root.quit)
     
@@ -500,6 +656,9 @@ def interface():
     abrir_botao = ttk.Button(button_frame, text="Abrir Arquivo", command=abrir_arquivo, 
                             state="disabled", style="Custom.TButton")
     abrir_botao.pack(side=tk.LEFT, padx=5)
+    
+    backup_botao = ttk.Button(button_frame, text="Abrir Backup", command=abrir_backup, style="Custom.TButton")
+    backup_botao.pack(side=tk.LEFT, padx=5)
 
     # Barra de progresso
     progress_frame = ttk.Frame(main_frame)

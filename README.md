@@ -11,6 +11,8 @@ Esta aplicação foi desenvolvida para automatizar o processo de geração de ar
 - Geração de arquivos de remessa para B3
 - Filtro por carteira (FIDC, Própria ou Todas)
 - Histórico de operações
+- Backup automático dos arquivos gerados
+- Acesso a arquivos de backup anteriores
 - Interface gráfica moderna e intuitiva
 - Feedback visual do progresso
 - Tratamento de erros
@@ -30,6 +32,7 @@ remessa-b3/
 ├── favicon-b3.ico          # Ícone da aplicação
 ├── remessa-b3.spec         # Configuração do PyInstaller
 ├── README.md               # Documentação do projeto
+├── backups/                # Pasta de backups dos arquivos gerados
 └── venv/                   # Ambiente virtual (não versionado)
 ```
 
@@ -73,6 +76,12 @@ remessa-b3/
    - Clique em "Gerar Arquivo"
    - Selecione onde salvar o arquivo gerado
    - Use o botão "Abrir Arquivo" para visualizar o resultado
+
+3. Funcionalidade de Backup:
+   - Cada arquivo gerado é automaticamente salvo como backup
+   - Os backups são nomeados com o número do borderô e timestamp
+   - Acesse os backups pelo menu "Arquivo > Abrir Arquivo de Backup" ou pelo botão "Abrir Backup"
+   - Limpe o histórico e backups pelo menu "Arquivo > Limpar Histórico e Backups"
 
 ## Compilação
 
