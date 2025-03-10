@@ -13,6 +13,8 @@ Esta aplicação foi desenvolvida para automatizar o processo de geração de ar
 - Histórico de operações
 - Backup automático dos arquivos gerados
 - Acesso a arquivos de backup anteriores
+- Verificação automática de atualizações
+- Configuração via arquivo .env
 - Interface gráfica moderna e intuitiva
 - Feedback visual do progresso
 - Tratamento de erros
@@ -32,6 +34,10 @@ remessa-b3/
 ├── favicon-b3.ico          # Ícone da aplicação
 ├── remessa-b3.spec         # Configuração do PyInstaller
 ├── README.md               # Documentação do projeto
+├── CHANGELOG.md            # Histórico de alterações
+├── RELEASE.md              # Instruções para lançamento de versões
+├── .env.example            # Exemplo de configuração (versionado)
+├── .env                    # Configurações reais (não versionado)
 ├── backups/                # Pasta de backups dos arquivos gerados
 └── venv/                   # Ambiente virtual (não versionado)
 ```
@@ -63,6 +69,15 @@ remessa-b3/
    pip install -r requirements.txt
    ```
 
+5. Configure o arquivo .env:
+   ```
+   # Copie o arquivo de exemplo
+   cp .env.example .env
+   
+   # Edite o arquivo .env com suas configurações
+   # Especialmente as credenciais do banco de dados
+   ```
+
 ## Uso
 
 1. Com o ambiente virtual ativado, execute a aplicação:
@@ -83,6 +98,23 @@ remessa-b3/
    - Acesse os backups pelo menu "Arquivo > Abrir Arquivo de Backup" ou pelo botão "Abrir Backup"
    - Limpe o histórico e backups pelo menu "Arquivo > Limpar Histórico e Backups"
 
+4. Sistema de Atualização:
+   - A aplicação verifica automaticamente por novas versões ao iniciar
+   - Você pode verificar manualmente através do menu "Ajuda > Verificar Atualizações"
+   - Quando uma nova versão estiver disponível, você será notificado e poderá baixá-la diretamente
+
+## Configuração (.env)
+
+O arquivo `.env` contém todas as configurações da aplicação:
+
+- **Banco de Dados**: Credenciais para conexão ao SQL Server
+- **Aplicação**: Versão e nome da aplicação
+- **GitHub**: Configurações para verificação de atualizações
+- **Carteiras**: IDs das carteiras disponíveis
+- **Layout B3**: Configurações específicas para o layout de arquivo B3
+
+Para configurar, copie o arquivo `.env.example` para `.env` e edite conforme necessário.
+
 ## Compilação
 
 Para gerar um executável standalone:
@@ -92,6 +124,14 @@ pyinstaller remessa-b3.spec
 ```
 
 O executável será gerado na pasta `dist/`.
+
+## Versionamento
+
+O versionamento segue o padrão [SemVer](https://semver.org/):
+- MAJOR.MINOR.PATCH (ex: 1.1.0)
+- Versão MAJOR: mudanças incompatíveis com versões anteriores
+- Versão MINOR: adição de funcionalidades compatíveis com versões anteriores
+- Versão PATCH: correções de bugs compatíveis com versões anteriores
 
 ## Contribuição
 

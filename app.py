@@ -2,8 +2,12 @@ import subprocess
 import re
 import pyodbc
 import os
+import sys
 import unicodedata
 import shutil
+import requests
+import webbrowser
+from packaging import version
 from datetime import datetime
 from tkinter import Tk, ttk, filedialog, messagebox
 import tkinter as tk
@@ -12,13 +16,48 @@ from PIL import Image, ImageTk
 import threading
 import json
 from pathlib import Path
+from dotenv import load_dotenv
+
+# Carregar variáveis de ambiente
+load_dotenv()
+
+# Informações da versão e configurações
+APP_VERSION = os.getenv("APP_VERSION", "1.1.0")
+APP_NAME = os.getenv("APP_NAME", "Remessa B3")
+GITHUB_REPO = os.getenv("GITHUB_REPO", "arthr/remessa-b3")
+GITHUB_API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
+
+# Configurações do banco de dados
+DB_SERVER = os.getenv("DB_SERVER", "")
+DB_NAME = os.getenv("DB_NAME", "")
+DB_USER = os.getenv("DB_USER", "")
+DB_PASSWORD = os.getenv("DB_PASSWORD", "")
+
+# Configurações de carteira
+CARTEIRA_FIDC_ID = int(os.getenv("CARTEIRA_FIDC_ID", "2"))
+CARTEIRA_PROPRIA_ID = int(os.getenv("CARTEIRA_PROPRIA_ID", "0"))
+
+# Configurações de layout B3
+CONTA_ESCRITURADOR = os.getenv("CONTA_ESCRITURADOR", "58561405")
+CNPJ_TITULAR = os.getenv("CNPJ_TITULAR", "51030944000142")
+RAZAO_TITULAR = os.getenv("RAZAO_TITULAR", "DIRETA CAPITAL FIDC")
 
 def remover_acentos(texto):
     normalizado = unicodedata.normalize("NFD", texto)
     return ''.join(char for char in normalizado if unicodedata.category(char) != 'Mn')
 
-def conectar_banco(server, database, user, password):
+def conectar_banco(server=None, database=None, user=None, password=None):
+    """Conecta ao banco de dados usando as credenciais fornecidas ou as variáveis de ambiente"""
     try:
+        server = server or DB_SERVER
+        database = database or DB_NAME
+        user = user or DB_USER
+        password = password or DB_PASSWORD
+        
+        if not all([server, database, user, password]):
+            raise ValueError("Credenciais de banco de dados incompletas")
+            
         conn = pyodbc.connect(
             f"DRIVER={{ODBC Driver 17 for SQL Server}};SERVER={server};DATABASE={database};UID={user};PWD={password}"
         )
@@ -220,10 +259,10 @@ def gerar_arquivo(dados, output_file):
                     f"{row.get('Tipo_Registro', '1').ljust(1)}"  # Tipo de Registro
                     f"{row.get('Acao', 'INCL').ljust(4)}"  # Ação
                     f"{(row.get('Codigo_IF') or '').rjust(14)}"  # Código IF
-                    f"{(row.get('Conta_Escriturador', '0') or '0').rjust(8)}"  # Conta Escriturador
+                    f"{(row.get('Conta_Escriturador', CONTA_ESCRITURADOR) or CONTA_ESCRITURADOR).rjust(8)}"  # Conta Escriturador
                     f"{(row.get('Conta_do_Titular', '') or '').rjust(8)}"  # Conta do Titular
-                    f"{re.sub(r'\D', '', (row.get('CNPJ_Titular') or '0')).rjust(14)}"  # CPF/CNPJ do Titular
-                    f"{remover_acentos(row.get('Razao_Titular', 'X') or 'RAZAO_TITULAR').ljust(100)}"  # Razão Social do Titular
+                    f"{re.sub(r'\D', '', (row.get('CNPJ_Titular', CNPJ_TITULAR) or CNPJ_TITULAR)).rjust(14)}"  # CPF/CNPJ do Titular
+                    f"{remover_acentos(row.get('Razao_Titular', RAZAO_TITULAR) or RAZAO_TITULAR).ljust(100)}"  # Razão Social do Titular
                     f"{(row.get('Meu_Numero') or '').rjust(10)}"  # Meu Número
                     f"{(row.get('Manutencao') or '').rjust(2)}"  # Manutenção Unilateral
                     f"{(row.get('Tipo_Regime') or '2').ljust(1)}"  # Tipo de Regime
@@ -285,10 +324,34 @@ def centralizar_janela(root, largura=500, altura=300):
     # Define a geometria da janela
     root.geometry(f"{largura}x{altura}+{pos_x}+{pos_y}")
 
+def verificar_atualizacao():
+    """Verifica se há uma nova versão disponível no GitHub"""
+    try:
+        headers = {}
+        if GITHUB_TOKEN:
+            headers["Authorization"] = f"token {GITHUB_TOKEN}"
+            
+        response = requests.get(GITHUB_API_URL, headers=headers, timeout=5)
+        if response.status_code == 200:
+            dados = response.json()
+            ultima_versao = dados.get('tag_name', '').lstrip('v')
+            
+            if version.parse(ultima_versao) > version.parse(APP_VERSION):
+                return {
+                    'disponivel': True,
+                    'versao': ultima_versao,
+                    'url': dados.get('html_url', ''),
+                    'notas': dados.get('body', 'Notas de lançamento não disponíveis.')
+                }
+        
+        return {'disponivel': False}
+    except Exception:
+        return {'disponivel': False}
+
 def interface():
     # Configuração do tema e estilo
     root = ThemedTk(theme="azure")
-    root.title("Remessa B3 - Gerador de Arquivo")
+    root.title(f"{APP_NAME} - v{APP_VERSION}")
     
     # Configurações de estilo
     style = ttk.Style()
@@ -506,30 +569,24 @@ def interface():
                 atualizar_status("Erro: Número de Borderô inválido!", "error")
                 return
 
-            # Configurações do banco
-            server = "wba.cjuos0oy40ce.sa-east-1.rds.amazonaws.com"
-            database = "wba"
-            user = "sa"
-            password = "wba@1234"
-            
             # Obter o ID da carteira selecionada
             carteira = combobox_carteira.get()
             carteira_id = None
             if carteira == "Carteira FIDC":
-                carteira_id = 2
+                carteira_id = CARTEIRA_FIDC_ID
             elif carteira == "Carteira Própria":
-                carteira_id = 0
-            
+                carteira_id = CARTEIRA_PROPRIA_ID
+
             # Desabilitar controles durante o processamento
             entry_bordero.config(state="disabled")
             combobox_carteira.config(state="disabled")
             gerar_botao.config(state="disabled")
-            
+
             try:
                 # Conectar ao banco de dados
                 atualizar_status("Conectando ao banco de dados...", "info")
                 mostrar_progresso(20)
-                conn = conectar_banco(server, database, user, password)
+                conn = conectar_banco()
                 if not conn:
                     atualizar_status("Erro: Não foi possível conectar ao banco.", "error")
                     return
@@ -594,11 +651,68 @@ def interface():
         else:
             atualizar_status("Nenhum arquivo disponível para abrir.", "warning")
 
+    def mostrar_atualizacao_disponivel(info_atualizacao):
+        """Mostra uma janela informando sobre a atualização disponível"""
+        update_window = tk.Toplevel(root)
+        update_window.title("Atualização Disponível")
+        update_window.geometry("500x400")
+        update_window.transient(root)
+        update_window.grab_set()
+        
+        # Centralizar a janela
+        centralizar_janela(update_window, 500, 400)
+        
+        # Frame principal
+        main_frame = ttk.Frame(update_window, padding=10)
+        main_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Título
+        ttk.Label(main_frame, text="Nova Versão Disponível!", 
+                 font=("Segoe UI", 12, "bold")).pack(pady=10)
+        
+        # Informações da versão
+        ttk.Label(main_frame, text=f"Versão atual: {APP_VERSION}").pack(anchor="w", pady=2)
+        ttk.Label(main_frame, text=f"Nova versão: {info_atualizacao['versao']}").pack(anchor="w", pady=2)
+        
+        # Notas de lançamento
+        ttk.Label(main_frame, text="Notas de lançamento:", font=("Segoe UI", 10, "bold")).pack(anchor="w", pady=5)
+        
+        # Frame para as notas com scrollbar
+        notes_frame = ttk.Frame(main_frame)
+        notes_frame.pack(fill=tk.BOTH, expand=True, pady=5)
+        
+        scrollbar = ttk.Scrollbar(notes_frame)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        notes_text = tk.Text(notes_frame, wrap=tk.WORD, height=10, yscrollcommand=scrollbar.set)
+        notes_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.config(command=notes_text.yview)
+        
+        notes_text.insert(tk.END, info_atualizacao['notas'])
+        notes_text.config(state=tk.DISABLED)
+        
+        # Frame para botões
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(fill=tk.X, pady=10)
+        
+        def abrir_pagina_download():
+            webbrowser.open(info_atualizacao['url'])
+            update_window.destroy()
+        
+        ttk.Button(button_frame, text="Baixar Atualização", command=abrir_pagina_download).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="Lembrar Depois", command=update_window.destroy).pack(side=tk.LEFT, padx=5)
+    
+    def verificar_atualizacoes_background():
+        """Verifica atualizações em segundo plano"""
+        info_atualizacao = verificar_atualizacao()
+        if info_atualizacao['disponivel']:
+            root.after(1000, lambda: mostrar_atualizacao_disponivel(info_atualizacao))
+    
     def sobre():
         """Mostra informações sobre o programa"""
         messagebox.showinfo(
-            "Sobre - Remessa B3",
-            "Gerador de Arquivo B3\nVersão 1.0\n\nDesenvolvido por Arthur Morais\n© 2024 Todos os direitos reservados"
+            f"Sobre - {APP_NAME}",
+            f"{APP_NAME}\nVersão {APP_VERSION}\n\nDesenvolvido por Arthur Morais\n© 2024 Todos os direitos reservados"
         )
 
     # Configuração da janela principal
@@ -618,12 +732,14 @@ def interface():
     arquivo_menu.add_command(label="Gerar Novo Arquivo", command=iniciar_geracao)
     arquivo_menu.add_command(label="Abrir Último Arquivo", command=abrir_arquivo)
     arquivo_menu.add_command(label="Abrir Arquivo de Backup", command=abrir_backup)
+    arquivo_menu.add_separator()
     arquivo_menu.add_command(label="Limpar Histórico e Backups", command=limpar_historico_e_backups)
     arquivo_menu.add_separator()
     arquivo_menu.add_command(label="Sair", command=root.quit)
     
     ajuda_menu = tk.Menu(menu_bar, tearoff=0)
     menu_bar.add_cascade(label="Ajuda", menu=ajuda_menu)
+    ajuda_menu.add_command(label="Verificar Atualizações", command=lambda: threading.Thread(target=lambda: mostrar_atualizacao_disponivel(verificar_atualizacao()) if verificar_atualizacao()['disponivel'] else messagebox.showinfo("Atualização", "Você já está usando a versão mais recente."), daemon=True).start())
     ajuda_menu.add_command(label="Sobre", command=sobre)
 
     # Frame principal
@@ -691,6 +807,9 @@ def interface():
     # Carregar histórico salvo
     historico_operacoes = carregar_historico()
     atualizar_lista_historico()
+
+    # Verificar atualizações em segundo plano
+    threading.Thread(target=verificar_atualizacoes_background, daemon=True).start()
 
     # Loop principal
     root.mainloop()

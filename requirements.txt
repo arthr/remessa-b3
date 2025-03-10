@@ -15,8 +15,10 @@ pyinstaller==6.10.0
 pyinstaller-hooks-contrib==2024.8
 pyodbc==5.2.0
 python-dateutil==2.9.0.post0
+python-dotenv==1.0.0
 pytz==2024.2
 pywin32-ctypes==0.2.3
+requests==2.31.0
 setuptools==75.1.0
 six==1.16.0
 ttkthemes==3.2.2
