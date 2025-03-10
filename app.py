@@ -44,6 +44,17 @@ CONTA_ESCRITURADOR = os.getenv("CONTA_ESCRITURADOR", "58561405")
 CNPJ_TITULAR = os.getenv("CNPJ_TITULAR", "51030944000142")
 RAZAO_TITULAR = os.getenv("RAZAO_TITULAR", "DIRETA CAPITAL FIDC")
 
+# Função para encontrar o caminho do recurso em desenvolvimento ou no executável
+def resource_path(relative_path):
+    """Obter o caminho absoluto para o recurso, funcionando para dev e para PyInstaller"""
+    try:
+        # PyInstaller cria uma pasta temp e armazena o caminho em _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+    
+    return os.path.join(base_path, relative_path)
+
 class SplashScreen:
     def __init__(self, parent):
         self.parent = parent
@@ -56,7 +67,9 @@ class SplashScreen:
         
         # Carregar a imagem de splash
         try:
-            splash_image = Image.open("splashLogo.png")
+            # Usar resource_path para encontrar o caminho correto da imagem
+            splash_image_path = resource_path("splashLogo.png")
+            splash_image = Image.open(splash_image_path)
             # Obter dimensões da imagem
             width, height = splash_image.size
             
@@ -808,7 +821,7 @@ def interface():
             centralizar_janela(root, 800, 600)
             
             try:
-                root.iconbitmap("favicon-b3.ico")
+                root.iconbitmap(resource_path("favicon-b3.ico"))
             except Exception:
                 pass
                 
