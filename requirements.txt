@@ -23,4 +23,5 @@ setuptools==75.1.0
 six==1.16.0
 ttkthemes==3.2.2
 tzdata==2024.2
-Werkzeug==3.0.4 
+Werkzeug==3.0.4
+tufup>=0.2.3 

@@ -18,6 +18,7 @@ import json
 import time
 from pathlib import Path
 from dotenv import load_dotenv
+import tempfile
 
 # Carregar variáveis de ambiente
 load_dotenv()
@@ -43,6 +44,11 @@ CARTEIRA_PROPRIA_ID = int(os.getenv("CARTEIRA_PROPRIA_ID", "0"))
 CONTA_ESCRITURADOR = os.getenv("CONTA_ESCRITURADOR", "58561405")
 CNPJ_TITULAR = os.getenv("CNPJ_TITULAR", "51030944000142")
 RAZAO_TITULAR = os.getenv("RAZAO_TITULAR", "DIRETA CAPITAL FIDC")
+
+# Constantes para TUFUP
+TUF_METADATA_URL = os.getenv("TUF_METADATA_URL", f"https://raw.githubusercontent.com/{GITHUB_REPO}/main/tuf_metadata")
+TUF_METADATA_DIR = "tuf_metadata"
+TUF_TARGET_DIR = "updates"
 
 # Função para encontrar o caminho do recurso em desenvolvimento ou no executável
 def resource_path(relative_path):
@@ -374,7 +380,6 @@ def gerar_arquivo(dados, output_file):
                     f"{re.sub(r'\D', '', str(row.get('Valor_nota_fiscal', 0))).rjust(18, '0')}"  # Valor Total da Nota Fiscal
                     f"{''.rjust(8)}"  # Taxa de Juros/Índice de Reajuste
                     f"{'0'.rjust(4, '0')}"  # Número de Parcelas
-                    f"{''.rjust(7)}"  # Código do IBGE
                     f"{'N'.rjust(1)}"  # Operação Informada no SCR
                     f"{''.rjust(100)}"  # IPOC
                     f"<"  # Delimitador
@@ -430,7 +435,7 @@ def verificar_atualizacao():
                     'download_url': download_url,
                     'notas': dados.get('body', 'Notas de lançamento não disponíveis.')
                 }
-        
+            
         return {'disponivel': False}
     except Exception as e:
         print(f"Erro ao verificar atualizações: {e}")
@@ -510,7 +515,7 @@ def baixar_atualizacao(download_url, versao, root, progress_callback=None, compl
                             progress = int((downloaded / total_size) * 100)
                             # Chamada de progresso na thread principal com velocidade
                             root.after(0, lambda p=progress, s=speed_text: progress_callback(p, s))
-                        
+            
                         # Atualizar variáveis para próxima iteração
                         last_time = current_time
                         last_downloaded = downloaded
@@ -518,7 +523,7 @@ def baixar_atualizacao(download_url, versao, root, progress_callback=None, compl
             # Chamada de conclusão na thread principal
             if complete_callback:
                 root.after(0, lambda: complete_callback(str(filepath)))
-            
+                
         except Exception as e:
             print(f"Erro no download: {e}")
             # Informar falha na thread principal
@@ -549,7 +554,7 @@ def instalar_atualizacao(arquivo_path, root):
             messagebox.showinfo("Modo Desenvolvimento", 
                               "Executando em modo de desenvolvimento. A atualização seria aplicada no executável final.")
             return True
-            
+        
         # No Windows, criar um script para substituir o executável após o fechamento
         if os.name == 'nt':
             # Criar um script batch para executar após o fechamento do aplicativo
@@ -573,8 +578,8 @@ def instalar_atualizacao(arquivo_path, root):
                 
             # Executar o script e fechar a aplicação
             subprocess.Popen(['cmd', '/c', str(updater_script)], 
-                            shell=True, 
-                            creationflags=subprocess.CREATE_NEW_CONSOLE)
+                           shell=True, 
+                           creationflags=subprocess.CREATE_NEW_CONSOLE)
             
             # Informar e fechar a aplicação
             messagebox.showinfo("Atualizando", "A atualização será instalada. A aplicação será reiniciada.")
@@ -894,17 +899,17 @@ def interface():
             
     def mostrar_atualizacao_disponivel(info_atualizacao):
         """Mostra uma janela informando sobre a atualização disponível"""
-        update_window = tk.Toplevel(root)
-        update_window.title("Atualização Disponível")
-        update_window.geometry("500x450")  # Aumentei um pouco a altura para acomodar a barra de progresso
-        update_window.transient(root)
-        update_window.grab_set()
+        dialog = tk.Toplevel(root)
+        dialog.title("Atualização Disponível")
+        dialog.geometry("500x480")  # Aumentei um pouco a altura para acomodar a barra de progresso
+        dialog.transient(root)
+        dialog.grab_set()
         
         # Centralizar a janela
-        centralizar_janela(update_window, 500, 450)
+        centralizar_janela(dialog, 500, 480)
         
         # Frame principal
-        main_frame = ttk.Frame(update_window, padding=10)
+        main_frame = ttk.Frame(dialog, padding=10)
         main_frame.pack(fill=tk.BOTH, expand=True)
         
         # Título
@@ -912,14 +917,15 @@ def interface():
                  font=("Segoe UI", 12, "bold")).pack(pady=10)
         
         # Informações da versão
-        ttk.Label(main_frame, text=f"Versão atual: {APP_VERSION}").pack(anchor="w", pady=2)
-        ttk.Label(main_frame, text=f"Nova versão: {info_atualizacao['versao']}").pack(anchor="w", pady=2)
+        info_frame = ttk.Frame(main_frame)
+        ttk.Label(info_frame, text=f"Versão atual: {APP_VERSION}").pack(anchor="w", pady=2)
+        ttk.Label(info_frame, text=f"Nova versão: {info_atualizacao['versao']}").pack(anchor="w", pady=2)
         
         # Notas de lançamento
-        ttk.Label(main_frame, text="Notas de lançamento:", font=("Segoe UI", 10, "bold")).pack(anchor="w", pady=5)
+        ttk.Label(info_frame, text="Notas de lançamento:", font=("Segoe UI", 10, "bold")).pack(anchor="w", pady=5)
         
         # Frame para as notas com scrollbar
-        notes_frame = ttk.Frame(main_frame)
+        notes_frame = ttk.Frame(info_frame)
         notes_frame.pack(fill=tk.BOTH, expand=True, pady=5)
         
         scrollbar = ttk.Scrollbar(notes_frame)
@@ -932,71 +938,52 @@ def interface():
         notes_text.insert(tk.END, info_atualizacao['notas'])
         notes_text.config(state=tk.DISABLED)
         
-        # Frame para a barra de progresso (inicialmente escondido)
-        progress_frame = ttk.Frame(main_frame)
-        progress_frame.pack(fill=tk.X, pady=5)
-        progress_frame.pack_forget()  # Esconder inicialmente
+        # Mostrar informações da atualização
+        info_frame.pack(pady=10, fill=tk.X)
         
-        progress_bar = ttk.Progressbar(progress_frame, mode='determinate', length=100)
-        progress_bar.pack(fill=tk.X, padx=5, pady=5)
-        
-        progress_label = ttk.Label(progress_frame, text="Iniciando download...")
-        progress_label.pack(anchor="w", pady=2)
-        
-        # Frame para botões
-        button_frame = ttk.Frame(main_frame)
-        button_frame.pack(fill=tk.X, pady=10)
-        
-        # Variáveis para controle do download
+        # Variável para controlar o estado do download
         download_em_andamento = [False]
-        download_concluido = [False]
-        arquivo_baixado = [None]
         
+        # Definir todas as funções necessárias primeiro
         def atualizar_progresso(porcentagem, velocidade=""):
-            """Atualiza a barra de progresso e exibe a velocidade"""
-            progress_bar['value'] = porcentagem
-            texto = f"Baixando: {porcentagem}%"
-            if velocidade:
-                texto += f" ({velocidade})"
-            progress_label.config(text=texto)
-            
+            if not download_em_andamento[0]:
+                return
+                    
+            progress_bar["value"] = porcentagem
+            progress_label.config(text=f"Baixando atualização: {porcentagem}%")
+            speed_label.config(text=velocidade)
+            dialog.update_idletasks()
+        
         def download_finalizado(arquivo_path):
-            """Chamado quando o download é concluído ou falha"""
             download_em_andamento[0] = False
+            if not arquivo_path:
+                progress_label.config(text="Falha no download!")
+                cancel_btn.config(text="Fechar")
+                return
             
-            if arquivo_path:
-                # Download concluído com sucesso
-                download_concluido[0] = True
-                arquivo_baixado[0] = arquivo_path
-                progress_label.config(text="Download concluído com sucesso!")
-                baixar_btn.config(text="Instalar Agora", command=iniciar_instalacao)
-            else:
-                # Falha no download
-                progress_label.config(text="Falha no download. Tente novamente.")
-                baixar_btn.config(text="Tentar Novamente", state="normal")
+            progress_label.config(text="Download concluído!")
+            speed_label.config(text="")
+            
+            # Substituir botão de cancelar por botões de ação
+            cancel_btn.pack_forget()
+            
+            action_btns = ttk.Frame(progress_frame)
+            action_btns.pack(pady=(5, 0))
+            
+            ttk.Button(action_btns, text="Instalar agora", command=iniciar_instalacao).pack(side=tk.LEFT, padx=5)
+            ttk.Button(action_btns, text="Instalar depois", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
+            
+            # Salvar caminho do arquivo para uso posterior
+            dialog.arquivo_atualizacao = arquivo_path
         
         def iniciar_download():
-            """Inicia o download da atualização"""
             if not info_atualizacao.get('download_url'):
-                messagebox.showwarning("Download Indisponível", 
-                                      "Não foi possível encontrar o link de download automático. "
-                                      "Por favor, visite a página de releases para baixar manualmente.")
-                abrir_pagina_download()
+                messagebox.showerror("Erro", "URL de download não disponível.")
                 return
             
-            if download_em_andamento[0]:
-                return  # Já está baixando
-                
-            if download_concluido[0]:
-                iniciar_instalacao()  # Já baixou, apenas instalar
-                return
-                
-            # Mostrar a barra de progresso
-            progress_frame.pack(fill=tk.X, pady=5, before=button_frame)
-            progress_bar['value'] = 0
-            
-            # Configurar botões
-            baixar_btn.config(text="Baixando...", state="disabled")
+            # Ocultar botões e mostrar progresso
+            action_frame.pack_forget()
+            progress_frame.pack(pady=10, fill=tk.X)
             
             # Iniciar o download
             download_em_andamento[0] = True
@@ -1009,35 +996,51 @@ def interface():
             )
         
         def abrir_pagina_download():
-            """Abre a página de download no navegador"""
-            webbrowser.open(info_atualizacao['url'])
-            update_window.destroy()
+            if info_atualizacao.get('url'):
+                webbrowser.open(info_atualizacao['url'])
+            dialog.destroy()
         
         def iniciar_instalacao():
-            """Inicia a instalação da atualização"""
-            if arquivo_baixado[0]:
-                update_window.destroy()
-                instalar_atualizacao(arquivo_baixado[0], root)
+            # Fechar o diálogo e iniciar a instalação
+            arquivo_path = getattr(dialog, 'arquivo_atualizacao', None)
+            dialog.destroy()
+            
+            if arquivo_path:
+                instalar_atualizacao(arquivo_path, root)
         
-        # Botões
-        baixar_btn = ttk.Button(
-            button_frame, 
-            text="Baixar e Instalar Automaticamente",
-            command=iniciar_download
-        )
-        baixar_btn.pack(side=tk.LEFT, padx=5)
+        def cancelar_download():
+            # Se o download já terminou, este botão funciona como "Fechar"
+            if not download_em_andamento[0]:
+                dialog.destroy()
+                return
+            
+            # Perguntar confirmação
+            if messagebox.askyesno("Cancelar download", "Deseja realmente cancelar o download?"):
+                download_em_andamento[0] = False
+                dialog.destroy()
         
-        ttk.Button(
-            button_frame, 
-            text="Baixar Manualmente", 
-            command=abrir_pagina_download
-        ).pack(side=tk.LEFT, padx=5)
+        # Frame para botões (agora que todas as funções foram definidas)
+        action_frame = ttk.Frame(main_frame)
+        action_frame.pack(fill=tk.X, pady=10)
         
-        ttk.Button(
-            button_frame, 
-            text="Lembrar Depois", 
-            command=update_window.destroy
-        ).pack(side=tk.LEFT, padx=5)
+        download_btn = ttk.Button(action_frame, text="Baixar e Instalar", command=iniciar_download)
+        download_btn.pack(side=tk.LEFT, padx=5)
+        
+        ttk.Button(action_frame, text="Ver no navegador", command=abrir_pagina_download).pack(side=tk.LEFT, padx=5)
+        ttk.Button(action_frame, text="Ignorar", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
+        
+        # Frame para progresso (inicialmente oculto)
+        progress_frame = ttk.Frame(main_frame)
+        progress_label = ttk.Label(progress_frame, text="Baixando atualização: 0%")
+        progress_label.pack(pady=(0, 5))
+        progress_bar = ttk.Progressbar(progress_frame, length=300, mode="determinate")
+        progress_bar.pack(pady=(0, 5))
+        
+        speed_label = ttk.Label(progress_frame, text="")
+        speed_label.pack(pady=(0, 5))
+        
+        cancel_btn = ttk.Button(progress_frame, text="Cancelar", command=cancelar_download)
+        cancel_btn.pack(pady=(0, 5))
 
     def sobre():
         """Mostra informações sobre o programa"""
