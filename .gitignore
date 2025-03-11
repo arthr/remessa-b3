@@ -67,6 +67,7 @@ venv.bak/
 *.log
 historico_operacoes.json
 backups/
+updates/
 
 # Windows specific
 Thumbs.db
