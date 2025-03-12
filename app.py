@@ -976,7 +976,7 @@ def interface():
                 baixar_btn.config(text="Tentar Novamente", state="normal")
         
         def iniciar_download():
-            """Inicia o download da atualização"""
+            """Inicia o processo de atualização executando o updater.py"""
             if not info_atualizacao.get('download_url'):
                 messagebox.showwarning("Download Indisponível", 
                                       "Não foi possível encontrar o link de download automático. "
@@ -984,29 +984,54 @@ def interface():
                 abrir_pagina_download()
                 return
             
-            if download_em_andamento[0]:
-                return  # Já está baixando
+            try:
+                # Obter o caminho do executável atual
+                current_exe = os.path.abspath(sys.executable)
                 
-            if download_concluido[0]:
-                iniciar_instalacao()  # Já baixou, apenas instalar
-                return
+                # Verificar se estamos em modo de desenvolvimento
+                if not getattr(sys, 'frozen', False):
+                    # Em modo de desenvolvimento, usar Python para executar o script
+                    updater_cmd = [sys.executable, "updater.py", 
+                                  info_atualizacao['download_url'], 
+                                  info_atualizacao['versao'],
+                                  current_exe]
+                    messagebox.showinfo("Modo Desenvolvimento", 
+                                      "Executando em modo de desenvolvimento. O atualizador será iniciado, mas não poderá substituir o executável.")
+                else:
+                    # Em modo executável, executar o updater diretamente
+                    updater_cmd = ["updater.exe", 
+                                  info_atualizacao['download_url'], 
+                                  info_atualizacao['versao'],
+                                  current_exe]
                 
-            # Mostrar a barra de progresso
-            progress_frame.pack(fill=tk.X, pady=5, before=button_frame)
-            progress_bar['value'] = 0
+                # Iniciar o processo do updater
+                subprocess.Popen(updater_cmd)
+                
+                # Fechar a janela de atualização
+                update_window.destroy()
+                
+                # Iniciar verificação periódica do sinal de atualização
+                verificar_sinal_atualizacao()
+                
+            except Exception as e:
+                messagebox.showerror("Erro ao Iniciar Atualização", 
+                                    f"Não foi possível iniciar o atualizador: {e}")
+        
+        def verificar_sinal_atualizacao():
+            """Verifica periodicamente se o updater sinalizou para encerrar a aplicação"""
+            signal_file = Path("updates") / "update_ready.signal"
             
-            # Configurar botões
-            baixar_btn.config(text="Baixando...", state="disabled")
-            
-            # Iniciar o download
-            download_em_andamento[0] = True
-            baixar_atualizacao(
-                info_atualizacao['download_url'], 
-                info_atualizacao['versao'],
-                root,
-                progress_callback=atualizar_progresso, 
-                complete_callback=download_finalizado
-            )
+            if signal_file.exists():
+                # Se o sinal existir, remover o arquivo e encerrar a aplicação
+                try:
+                    signal_file.unlink()
+                except:
+                    pass
+                messagebox.showinfo("Atualizando", "A aplicação será encerrada para concluir a atualização.")
+                root.quit()
+            else:
+                # Verificar novamente após 1 segundo
+                root.after(1000, verificar_sinal_atualizacao)
         
         def abrir_pagina_download():
             """Abre a página de download no navegador"""
