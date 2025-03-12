@@ -30,6 +30,9 @@ O projeto segue o padrão [SemVer](https://semver.org/) para versionamento:
 4. **Testar o Executável**:
    - Verifique se o executável gerado funciona corretamente
    - Teste todas as novas funcionalidades e correções
+   - **Teste o sistema de atualização**:
+     - Verifique se o mecanismo de sinalização funciona corretamente
+     - Confirme que a aplicação encerra automaticamente quando atualizada
 
 5. **Commit e Push das Alterações**:
    ```
@@ -78,4 +81,4 @@ As notas de lançamento devem seguir este formato:
 
 ## Verificação de Atualizações
 
-A aplicação verifica automaticamente por novas versões ao iniciar, consultando a API do GitHub. Quando uma nova versão é detectada, o usuário é notificado e pode baixá-la diretamente. 
+A aplicação verifica automaticamente por novas versões ao iniciar, consultando a API do GitHub. Quando uma nova versão é detectada, o usuário é notificado e pode baixá-la diretamente.

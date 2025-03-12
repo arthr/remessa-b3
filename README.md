@@ -110,7 +110,8 @@ remessa-b3/
 4. Sistema de Atualização:
    - A aplicação verifica automaticamente por novas versões ao iniciar
    - Você pode verificar manualmente através do menu "Ajuda > Verificar Atualizações"
-   - Quando uma nova versão estiver disponível, você será notificado e poderá baixá-la diretamente
+   - Quando uma nova versão estiver disponível, você será notificada e poderá baixá-la diretamente
+   - Um mecanismo de sinalização garante que a aplicação seja encerrada automaticamente durante o processo de atualização
 
 ## Configuração (.env)
 
@@ -169,4 +170,4 @@ Para suporte ou dúvidas, entre em contato com o desenvolvedor.
 
 ## Desenvolvedor
 
-Arthur Morais 
+Arthur Morais

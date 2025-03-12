@@ -19,6 +19,15 @@ Este projeto implementa um sistema de atualização dual para o aplicativo Remes
    - Criar um script batch para substituir o executável principal
    - Reiniciar o aplicativo atualizado
 
+## Mecanismo de Comunicação
+
+Para garantir que a atualização ocorra corretamente:
+
+1. O updater cria um arquivo de sinalização `update_ready.signal` na pasta `updates/`
+2. A aplicação principal verifica periodicamente a existência desse arquivo
+3. Quando detectado, a aplicação principal se encerra automaticamente
+4. O script batch substitui os arquivos e reinicia a aplicação atualizada
+
 ## Compilação
 
 Para compilar os executáveis, você precisará do PyInstaller instalado (`pip install pyinstaller`).
@@ -49,4 +58,4 @@ Após a compilação, copie o `updater.exe` da pasta `dist` para o mesmo diretó
 
 - **Erro "Atualizador não encontrado"**: Verifique se o arquivo `updater.exe` está no mesmo diretório que o aplicativo principal.
 - **Permissões de Escrita**: O atualizador precisa de permissões para escrever no diretório onde o aplicativo principal está instalado.
-- **Modo Desenvolvimento**: Em modo de desenvolvimento, o atualizador pode ser executado, mas não substituirá arquivos. 
+- **Modo Desenvolvimento**: Em modo de desenvolvimento, o atualizador pode ser executado, mas não substituirá arquivos.
