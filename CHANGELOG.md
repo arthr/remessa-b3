@@ -5,6 +5,23 @@ Todas as alterações notáveis neste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/),
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [1.3.0] - 2025-03-12
+### Novidades
+
+- Implementado mecanismo de sinalização para atualizações automáticas
+- Adicionada verificação periódica de sinal de atualização na aplicação principal
+
+### Correções
+
+- Corrigido problema onde a aplicação principal não era encerrada automaticamente durante atualizações
+- Melhorada documentação sobre o sistema de atualização
+
+### Instruções de Atualização
+
+1. Baixe o novo executável
+2. Substitua o executável antigo pelo novo
+3. Seus dados e configurações serão preservados
+
 ## [1.2.0] - 2025-03-10
 
 ### Adicionado
