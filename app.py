@@ -146,7 +146,7 @@ def conectar_banco(server=None, database=None, user=None, password=None):
 
 def executar_query(conn, bordero, carteira_id=None):
     query = """
-    -- Coloque aqui a query que você forneceu
+    -- Query atualizada com informação de situação (PAGO/EM ABERTO)
     WITH Titulos_Dor AS (
         SELECT 
             '1' AS Tipo_Registro,
@@ -187,7 +187,13 @@ def executar_query(conn, bordero, carteira_id=None):
             td.descricao AS Tipo_Documento,
             CAST(tit.ValorNota AS DECIMAL(18,2)) AS Valor_nota_fiscal,
             tit.BORDERO AS Bordero,
-            COALESCE(sflu.BANCO, sfidc.BANCO) AS Banco
+            COALESCE(sflu.BANCO, sfidc.BANCO) AS Banco,
+            CASE 
+                WHEN COALESCE(sflu.BANCO, sfidc.BANCO) IS NULL OR 
+                     LTRIM(RTRIM(COALESCE(sflu.BANCO, sfidc.BANCO))) = '' 
+                THEN 'EM ABERTO' 
+                ELSE 'PAGO' 
+            END AS Situacao
         FROM 
             [wba].[dbo].[SIGFLS] tit
         JOIN 
@@ -206,7 +212,7 @@ def executar_query(conn, bordero, carteira_id=None):
             [wba].[dbo].[SIGFIDC] sfidc ON tit.ctrl_id = sfidc.sigfls
         WHERE 
             1=1
-            AND (COALESCE(sflu.BANCO, sfidc.BANCO) IS NULL OR COALESCE(sflu.BANCO, sfidc.BANCO) = '  ' OR COALESCE(sflu.BANCO, sfidc.BANCO) = '')
+            -- Removido o filtro que excluía registros pagos - agora mostra todos com situação
             AND (tit.rejeitado NOT IN ('X', 'S') OR tit.rejeitado IS NULL)
             AND bor.dtliberacao IS NOT NULL
             AND td.tipodcto IN ('DM', 'DS')
@@ -277,7 +283,8 @@ def executar_query(conn, bordero, carteira_id=None):
         ISNULL(Serie, '') Serie,
         Tipo_Documento,
         Carteira,
-        ISNULL(Banco, '') Banco
+        ISNULL(Banco, '') Banco,
+        Situacao
     FROM 
         Titulos_Dor
     LEFT JOIN 
@@ -366,7 +373,7 @@ def gerar_arquivo(dados, output_file):
                     f"{re.sub(r'\D', '', (str(row.get('Bordero')) + str(row.get('Numero_Titulo')))).rjust(40)}"  # Número de Controle Interno (Borderô + Núm. do Título)
                     f"{''.ljust(14)}"  # Código IF do Lote (Obrigatório apenas se DC for vinculado a um lote)
                     f"{(row.get('Chave') or '').ljust(44)}"  # Chave de Acesso/Código de Verificação (NF-e/NFS-e)
-                    f"{'02'.rjust(2)}"  # Status do Pagamento (01 - Pago, 02 - Em Aberto. Na ação INCL deve ser sempre 02)
+                    f"{('01' if row.get('Situacao') == 'PAGO' else '02').rjust(2)}"  # Status do Pagamento (01 - Pago, 02 - Em Aberto)
                     f"{'01'.rjust(2)}"  # Forma de Pagamento (01 - Boleto, 02 - TED, 03 - DOC, 04 - Dinheiro, 05 - Título)
                     f"{''.rjust(2)}"  # Tipo de Garantia (Opcional para INCL do tipo IF e DC | 01 - Aval)
                     f"{''.ljust(100)}"  # Nome do Garantidor (Opcional para INCL do tipo IF e DC)
@@ -840,6 +847,18 @@ def interface():
                     atualizar_status("Erro: Nenhum dado retornado para o Borderô.", "error")
                     return
 
+                # Salvar dados da consulta para uso posterior
+                dados_ultima_consulta[0] = dados
+
+                # Calcular resumo da situação dos títulos
+                total_titulos = len(dados)
+                titulos_pagos = sum(1 for d in dados if d.get('Situacao') == 'PAGO')
+                titulos_abertos = total_titulos - titulos_pagos
+                
+                # Mostrar resumo da situação
+                resumo_situacao = f"Total: {total_titulos} | PAGOS: {titulos_pagos} | EM ABERTO: {titulos_abertos}"
+                atualizar_status(f"Consulta concluída - {resumo_situacao}", "info")
+
                 mostrar_progresso(60)
                 # Selecionar nome do arquivo para salvar
                 arquivo_nome = filedialog.asksaveasfilename(
@@ -891,6 +910,112 @@ def interface():
                 atualizar_status(f"Erro ao abrir o arquivo: {e}", "error")
         else:
             atualizar_status("Nenhum arquivo disponível para abrir.", "warning")
+    
+    def mostrar_detalhes_situacao(dados):
+        """Mostra uma janela com detalhes da situação de cada título"""
+        if not dados:
+            messagebox.showinfo("Informação", "Nenhum dado disponível para mostrar.")
+            return
+            
+        # Criar janela de detalhes
+        detalhes_window = tk.Toplevel(root)
+        detalhes_window.title("Detalhes da Situação dos Títulos")
+        detalhes_window.geometry("800x600")
+        detalhes_window.transient(root)
+        detalhes_window.grab_set()
+        
+        # Centralizar a janela
+        centralizar_janela(detalhes_window, 800, 600)
+        
+        # Frame principal
+        main_frame = ttk.Frame(detalhes_window, padding=10)
+        main_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Título
+        ttk.Label(main_frame, text="Detalhes da Situação dos Títulos", 
+                 font=("Segoe UI", 12, "bold")).pack(pady=10)
+        
+        # Resumo
+        total_titulos = len(dados)
+        titulos_pagos = sum(1 for d in dados if d.get('Situacao') == 'PAGO')
+        titulos_abertos = total_titulos - titulos_pagos
+        
+        resumo_frame = ttk.LabelFrame(main_frame, text="Resumo", padding=10)
+        resumo_frame.pack(fill=tk.X, pady=5)
+        
+        ttk.Label(resumo_frame, text=f"Total de Títulos: {total_titulos}", 
+                 font=("Segoe UI", 10, "bold")).pack(anchor="w")
+        ttk.Label(resumo_frame, text=f"Títulos PAGOS: {titulos_pagos}", 
+                 foreground="green", font=("Segoe UI", 10)).pack(anchor="w")
+        ttk.Label(resumo_frame, text=f"Títulos EM ABERTO: {titulos_abertos}", 
+                 foreground="orange", font=("Segoe UI", 10)).pack(anchor="w")
+        
+        # Frame para a lista com scrollbar
+        list_frame = ttk.Frame(main_frame)
+        list_frame.pack(fill=tk.BOTH, expand=True, pady=5)
+        
+        # Scrollbar
+        scrollbar = ttk.Scrollbar(list_frame)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # Treeview para mostrar os dados
+        columns = ('Título', 'Devedor', 'Valor', 'Vencimento', 'Situação')
+        tree = ttk.Treeview(list_frame, columns=columns, show='headings', yscrollcommand=scrollbar.set)
+        
+        # Configurar colunas
+        tree.heading('Título', text='Número do Título')
+        tree.heading('Devedor', text='Devedor')
+        tree.heading('Valor', text='Valor Face')
+        tree.heading('Vencimento', text='Data Vencimento')
+        tree.heading('Situação', text='Situação')
+        
+        tree.column('Título', width=120)
+        tree.column('Devedor', width=200)
+        tree.column('Valor', width=100)
+        tree.column('Vencimento', width=100)
+        tree.column('Situação', width=100)
+        
+        tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.config(command=tree.yview)
+        
+        # Preencher dados
+        for item in dados:
+            situacao = item.get('Situacao', 'N/A')
+            valor = item.get('Valor_Face', 0)
+            vencimento = item.get('Data_Vencimento', '')
+            
+            # Formatar valor
+            try:
+                valor_formatado = f"R$ {float(valor):,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
+            except:
+                valor_formatado = str(valor)
+            
+            # Formatar vencimento
+            if vencimento and len(vencimento) == 8:
+                vencimento_formatado = f"{vencimento[:4]}-{vencimento[4:6]}-{vencimento[6:8]}"
+            else:
+                vencimento_formatado = vencimento
+            
+            # Definir cor baseada na situação
+            tags = ('pago',) if situacao == 'PAGO' else ('aberto',)
+            
+            tree.insert('', tk.END, values=(
+                item.get('Numero_Titulo', ''),
+                item.get('Razao_Devedor', ''),
+                valor_formatado,
+                vencimento_formatado,
+                situacao
+            ), tags=tags)
+        
+        # Configurar cores
+        tree.tag_configure('pago', foreground='green')
+        tree.tag_configure('aberto', foreground='orange')
+        
+        # Frame para botões
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(fill=tk.X, pady=10)
+        
+        ttk.Button(button_frame, text="Fechar", command=detalhes_window.destroy).pack(side=tk.RIGHT, padx=5)
             
     def mostrar_atualizacao_disponivel(info_atualizacao):
         """Mostra uma janela informando sobre a atualização disponível"""
@@ -1083,7 +1208,7 @@ def interface():
             style.configure("Custom.TButton", font=("Segoe UI", 9), padding=5)
             
             # Variáveis de controle
-            nonlocal arquivo_salvo, historico_operacoes
+            nonlocal arquivo_salvo, historico_operacoes, dados_ultima_consulta
             nonlocal status_label, progress_bar, historico_list, entry_bordero, combobox_carteira, gerar_botao, abrir_botao
             
             # Criar pasta de backups se não existir
@@ -1121,6 +1246,8 @@ def interface():
             arquivo_menu.add_command(label="Gerar Novo Arquivo", command=iniciar_geracao)
             arquivo_menu.add_command(label="Abrir Último Arquivo", command=abrir_arquivo)
             arquivo_menu.add_command(label="Abrir Arquivo de Backup", command=abrir_backup)
+            arquivo_menu.add_separator()
+            arquivo_menu.add_command(label="Ver Detalhes da Situação", command=lambda: mostrar_detalhes_situacao(dados_ultima_consulta[0]) if dados_ultima_consulta[0] else messagebox.showinfo("Informação", "Execute uma consulta primeiro para ver os detalhes."))
             arquivo_menu.add_separator()
             arquivo_menu.add_command(label="Limpar Histórico e Backups", command=limpar_historico_e_backups)
             arquivo_menu.add_separator()
@@ -1164,6 +1291,9 @@ def interface():
             
             backup_botao = ttk.Button(button_frame, text="Abrir Backup", command=abrir_backup, style="Custom.TButton")
             backup_botao.pack(side=tk.LEFT, padx=5)
+            
+            detalhes_botao = ttk.Button(button_frame, text="Ver Detalhes", command=lambda: mostrar_detalhes_situacao(dados_ultima_consulta[0]) if dados_ultima_consulta[0] else messagebox.showinfo("Informação", "Execute uma consulta primeiro para ver os detalhes."), style="Custom.TButton")
+            detalhes_botao.pack(side=tk.LEFT, padx=5)
             
             # Barra de progresso
             progress_frame = ttk.Frame(main_frame)
@@ -1221,6 +1351,7 @@ def interface():
     # Variáveis globais para o escopo da interface
     arquivo_salvo = [None]
     historico_operacoes = []
+    dados_ultima_consulta = [None]  # Armazena os dados da última consulta
     
     # Definir variáveis para componentes de interface que serão acessados por funções
     status_label = None
