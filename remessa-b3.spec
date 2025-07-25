@@ -4,7 +4,7 @@ a = Analysis(
     ['app.py'],
     pathex=[],
     binaries=[],
-    datas=[('splashLogo.png', '.'), ('favicon-b3.ico', '.')],
+    datas=[('splashLogo.png', '.'), ('favicon-b3.ico', '.'), ('.env', '.')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
@@ -34,5 +34,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['C:\\Users\\ArthurMorais\\Documents\\Development\\remessa-b3\\favicon-b3.ico'],
+    icon=['./favicon-b3.ico'],
 )

@@ -5,7 +5,7 @@ a = Analysis(
     ['app.py'],
     pathex=[],
     binaries=[],
-    datas=[],
+    datas=[('.env', '.')],  # Incluir o arquivo .env no executável
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},

@@ -1,3 +1,4 @@
+# app.py
 import subprocess
 import re
 import pyodbc
@@ -17,398 +18,51 @@ import threading
 import json
 import time
 from pathlib import Path
-from dotenv import load_dotenv
 
-# Carregar variáveis de ambiente
-load_dotenv()
+# Adicionar o diretório src ao sys.path para permitir importações
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
+
+from config.settings import Settings
+from src.database.connection import DatabaseConnection
+from src.ui import SplashScreen
+from src.services import (
+    HistoryService, FileService, BackupService, BorderoService
+)
+
+from src.utils import (
+    validar_bordero,
+    resource_path,
+    remover_acentos,
+    verificar_configuracoes_banco,
+    centralizar_janela
+)
+
+# Carregar configurações
+settings = Settings()
 
 # Informações da versão e configurações
-APP_VERSION = os.getenv("APP_VERSION", "1.1.0")
-APP_NAME = os.getenv("APP_NAME", "Remessa B3")
-GITHUB_REPO = os.getenv("GITHUB_REPO", "arthr/remessa-b3")
-GITHUB_API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
-GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
+APP_VERSION = settings.app_version
+APP_NAME = settings.app_name
+GITHUB_REPO = settings.github_repo
+GITHUB_API_URL = settings.github_api_url
+GITHUB_TOKEN = settings.github_token
 
 # Configurações do banco de dados
-DB_SERVER = os.getenv("DB_SERVER", "")
-DB_NAME = os.getenv("DB_NAME", "")
-DB_USER = os.getenv("DB_USER", "")
-DB_PASSWORD = os.getenv("DB_PASSWORD", "")
+DB_SERVER = settings.db_server
+DB_NAME = settings.db_name
+DB_USER = settings.db_user
+DB_PASSWORD = settings.db_password
 
 # Configurações de carteira
-CARTEIRA_FIDC_ID = int(os.getenv("CARTEIRA_FIDC_ID", "2"))
-CARTEIRA_PROPRIA_ID = int(os.getenv("CARTEIRA_PROPRIA_ID", "0"))
+CARTEIRA_FIDC_ID = settings.carteira_fidc_id
+CARTEIRA_PROPRIA_ID = settings.carteira_propria_id
 
 # Configurações de layout B3
-CONTA_ESCRITURADOR = os.getenv("CONTA_ESCRITURADOR", "58561405")
-CNPJ_TITULAR = os.getenv("CNPJ_TITULAR", "51030944000142")
-RAZAO_TITULAR = os.getenv("RAZAO_TITULAR", "DIRETA CAPITAL FIDC")
+CONTA_ESCRITURADOR = settings.conta_escriturador
+CNPJ_TITULAR = settings.cnpj_titular
+RAZAO_TITULAR = settings.razao_titular
 
-# Função para encontrar o caminho do recurso em desenvolvimento ou no executável
-def resource_path(relative_path):
-    """Obter o caminho absoluto para o recurso, funcionando para dev e para PyInstaller"""
-    try:
-        # PyInstaller cria uma pasta temp e armazena o caminho em _MEIPASS
-        base_path = sys._MEIPASS
-    except Exception:
-        base_path = os.path.abspath(".")
-    
-    return os.path.join(base_path, relative_path)
-
-class SplashScreen:
-    def __init__(self, parent):
-        self.parent = parent
-        self.splash = tk.Toplevel(parent)
-        self.splash.title("Carregando...")
-        self.splash.overrideredirect(True)  # Remove bordas da janela
-        
-        # Configurar a janela para ficar no topo
-        self.splash.attributes("-topmost", True)
-        
-        # Carregar a imagem de splash
-        try:
-            # Usar resource_path para encontrar o caminho correto da imagem
-            splash_image_path = resource_path("splashLogo.png")
-            splash_image = Image.open(splash_image_path)
-            # Obter dimensões da imagem
-            width, height = splash_image.size
-            
-            # Configurar a geometria da janela
-            screen_width = self.splash.winfo_screenwidth()
-            screen_height = self.splash.winfo_screenheight()
-            x = (screen_width - width) // 2
-            y = (screen_height - height) // 2
-            self.splash.geometry(f"{width}x{height}+{x}+{y}")
-            
-            # Criar um canvas com fundo transparente
-            self.canvas = Canvas(self.splash, width=width, height=height, 
-                                bg='#f0f0f0', highlightthickness=0)
-            self.canvas.pack()
-            
-            # Converter a imagem para formato Tkinter
-            self.tk_image = ImageTk.PhotoImage(splash_image)
-            
-            # Adicionar a imagem ao canvas
-            self.canvas.create_image(width//2, height//2, image=self.tk_image)
-            
-            # Adicionar texto de versão
-            self.canvas.create_text(width//2, height-20, 
-                                   text=f"Versão {APP_VERSION}", 
-                                   fill="#333333", font=("Segoe UI", 10))
-            
-            # Adicionar barra de progresso
-            self.progress_var = tk.DoubleVar()
-            self.progress = ttk.Progressbar(self.splash, variable=self.progress_var, 
-                                          length=width-40, mode="determinate")
-            self.progress_window = self.canvas.create_window(width//2, height-40, 
-                                                          window=self.progress)
-            
-            # Adicionar texto de status
-            self.status_text = self.canvas.create_text(width//2, height-60, 
-                                                    text="Inicializando...", 
-                                                    fill="#333333", font=("Segoe UI", 9))
-        except Exception as e:
-            print(f"Erro ao carregar splash screen: {e}")
-            self.splash.destroy()
-    
-    def update_progress(self, value, status_text):
-        """Atualiza o progresso e o texto de status"""
-        self.progress_var.set(value)
-        self.canvas.itemconfig(self.status_text, text=status_text)
-        self.splash.update_idletasks()
-    
-    def destroy(self):
-        """Fecha a splash screen"""
-        self.splash.destroy()
-
-def remover_acentos(texto):
-    normalizado = unicodedata.normalize("NFD", texto)
-    return ''.join(char for char in normalizado if unicodedata.category(char) != 'Mn')
-
-def conectar_banco(server=None, database=None, user=None, password=None):
-    """Conecta ao banco de dados usando as credenciais fornecidas ou as variáveis de ambiente"""
-    try:
-        server = server or DB_SERVER
-        database = database or DB_NAME
-        user = user or DB_USER
-        password = password or DB_PASSWORD
-        
-        if not all([server, database, user, password]):
-            raise ValueError("Credenciais de banco de dados incompletas")
-            
-        conn = pyodbc.connect(
-            f"DRIVER={{ODBC Driver 17 for SQL Server}};SERVER={server};DATABASE={database};UID={user};PWD={password}"
-        )
-        return conn
-    except Exception as e:
-        messagebox.showerror("Erro de Conexão", f"Não foi possível conectar ao banco de dados: {e}")
-        return None
-
-def executar_query(conn, bordero, carteira_id=None):
-    query = """
-    -- Query atualizada com informação de situação (PAGO/EM ABERTO)
-    WITH Titulos_Dor AS (
-        SELECT 
-            '1' AS Tipo_Registro,
-            'INCL' AS Inclusao,
-            tit.[ctrl_id] AS Id,
-            tit.Carteira_ID,
-            cart.Nome AS Carteira,
-            'DIRETA CAPITAL FIDC' AS Razao_Titular,
-            '51030944000142' AS CNPJ_Titular,
-            '' AS Conta_do_Titular,
-            '' AS Meu_Numero,
-            '' AS Manutencao,
-            '2' AS Tipo_Regime,
-            ced.CGC AS CNPJ_Credor,
-            UPPER(ced.NOME) AS Razao_Credor,
-            ced.ESTADO AS UF,
-            UPPER(ced.CIDADE) AS CIDADE,
-            sac.CGC AS CNPJ_Devedor,
-            UPPER(sac.NOME) AS Razao_Devedor,
-            'Boleto' AS Pagamento,
-            'DC' AS Tipo_IF,
-            'INCL' AS Acao,
-            '' AS Codigo_IF,
-            '' AS Vencimento_Atualizada,
-            '58561405' AS Conta_Escriturador,
-            '' AS Data_Valor_Atualizado,
-            CASE tit.tipodcto
-                WHEN 'DM' THEN '02'
-                WHEN 'DS' THEN '05'
-                ELSE 'XX'
-            END AS Especie_Titulo,
-            tit.[BORDERO] AS Numero_Bordero,
-            tit.[DCTO] AS Numero_Titulo,
-            CONVERT(VARCHAR(8), tit.[DTBORDERO], 112) AS Data_Operacao,
-            CONVERT(VARCHAR(8), tit.[DATA], 112) AS Data_Vencimento,
-            CAST(tit.[VALOR] AS DECIMAL(18,2)) AS Valor_Face,
-            CAST(tit.[VALOR] AS DECIMAL(18,2)) AS Valor_Atualizado,
-            td.descricao AS Tipo_Documento,
-            CAST(tit.ValorNota AS DECIMAL(18,2)) AS Valor_nota_fiscal,
-            tit.BORDERO AS Bordero,
-            COALESCE(sflu.BANCO, sfidc.BANCO) AS Banco,
-            CASE 
-                WHEN COALESCE(sflu.BANCO, sfidc.BANCO) IS NULL OR 
-                     LTRIM(RTRIM(COALESCE(sflu.BANCO, sfidc.BANCO))) = '' 
-                THEN 'EM ABERTO' 
-                ELSE 'PAGO' 
-            END AS Situacao
-        FROM 
-            [wba].[dbo].[SIGFLS] tit
-        JOIN 
-            [wba].[dbo].[SIGBORS] bor ON tit.BORDERO = bor.BORDERO
-        JOIN 
-            [wba].[dbo].[tipodcto] td ON tit.tipodcto = td.tipodcto
-        LEFT JOIN 
-            [wba].[dbo].[SIGCAD] ced ON tit.CLIFOR = ced.CODIGO
-        LEFT JOIN 
-            [wba].[dbo].[SIGCAD] sac ON tit.SACADO = sac.CODIGO
-        JOIN 
-            [wba].[dbo].[Carteira] cart ON cart.NumeroCarteira = tit.Carteira_ID
-        LEFT JOIN 
-            [wba].[dbo].[SIGFLU] sflu ON tit.ctrl_id = sflu.sigfls
-        LEFT JOIN 
-            [wba].[dbo].[SIGFIDC] sfidc ON tit.ctrl_id = sfidc.sigfls
-        WHERE 
-            1=1
-            -- Removido o filtro que excluía registros pagos - agora mostra todos com situação
-            AND (tit.rejeitado NOT IN ('X', 'S') OR tit.rejeitado IS NULL)
-            AND bor.dtliberacao IS NOT NULL
-            AND td.tipodcto IN ('DM', 'DS')
-    ),
-    Titulos_Nfe AS (
-        SELECT
-            a.numero,
-            a.serie,
-            CONVERT(VARCHAR(8), a.Data_Emissao, 112) AS Data_Emissao,
-            CAST(a.valor AS DECIMAL(18,2)) AS valor,
-            a.chave,
-            a.Ctrl_ID
-        FROM
-            [wba].[dbo].[nfeimportada] a
-        INNER JOIN 
-            [wba].[dbo].[nfeimportadaxsigfls] b ON b.nfeimportada_id = a.ctrl_id
-    
-        UNION ALL
-    
-        SELECT
-            a.numero,
-            a.serie,
-            CONVERT(VARCHAR(8), a.Data_Emissao, 112) AS Data_Emissao,
-            CAST(a.valor AS DECIMAL(18,2)) AS valor,
-            a.chave,
-            a.Ctrl_ID
-        FROM
-            [wba].[dbo].[nfeimportada] a
-        INNER JOIN 
-            [wba].[dbo].[NFeImportadaXSigflsMultiplasNFes] b ON b.NFeImportada_ID = a.Ctrl_ID
-    )
-    
-    SELECT 
-        Id,
-        Carteira_ID,
-        Tipo_IF,
-        Tipo_Registro,
-        Acao,
-        Codigo_IF,
-        Conta_Escriturador,
-        Conta_do_Titular,
-        CNPJ_Titular,
-        Razao_Titular,
-        Meu_Numero,
-        Manutencao,
-        Tipo_Regime,
-        CNPJ_Credor,
-        Razao_Credor,
-        CNPJ_Devedor,
-        Razao_Devedor,
-        Valor_Face,
-        Valor_Atualizado,
-        Data_Valor_Atualizado,
-        ISNULL(Data_Emissao, Data_Operacao) AS Data_Emissao,
-        Data_Vencimento,
-        Vencimento_Atualizada,
-        UF,
-        CIDADE,
-        Especie_Titulo,
-        Valor_nota_fiscal,
-        Data_Operacao,
-        Numero_Bordero,
-        Pagamento,
-        ISNULL(Numero_Titulo, '') Numero_Titulo,
-        ISNULL(Chave, '') Chave,
-        Bordero,
-        ISNULL(Numero, '') Numero,
-        ISNULL(Serie, '') Serie,
-        Tipo_Documento,
-        Carteira,
-        ISNULL(Banco, '') Banco,
-        Situacao
-    FROM 
-        Titulos_Dor
-    LEFT JOIN 
-        Titulos_Nfe
-    ON Ctrl_ID = Id
-
-    WHERE 1=1
-    AND Bordero = ?
-    {carteira_filtro}
-    """.format(
-            carteira_filtro="" if carteira_id is None else "AND Carteira_ID = ?"
-        ) + """
-    ORDER BY 
-        Data_Operacao DESC
-    """
-    try:
-        cursor = conn.cursor()
-        if carteira_id is not None:
-            cursor.execute(query, (bordero, carteira_id))
-        else:
-            cursor.execute(query, (bordero,))
-        rows = cursor.fetchall()
-        columns = [desc[0] for desc in cursor.description]
-        return [dict(zip(columns, row)) for row in rows]
-    except Exception as e:
-        messagebox.showerror("Erro na Query", f"Ocorreu um erro ao executar a query: {e}")
-        return []
-
-def gerar_header():
-    tipo_if = "DC".ljust(5)  # Tipo IF
-    tipo_registro = "0".ljust(1)  # Tipo de Registro
-    acao = "INCL".ljust(4)  # Ação
-    nome_participante = "DIRETACAPITAL".ljust(20)  # Nome Simplificado do Participante
-    data_envio = datetime.now().strftime("%Y%m%d")  # Data no formato AAAAMMDD
-    versao_layout = "00002".rjust(5)  # Versão do Layout (00001, 00002. Utilizando: 00002)
-    delimitador = "<".ljust(1)  # Delimitador do Fim da Linha
-
-    # Concatena os campos para formar o header
-    header = (
-        f"{tipo_if}"
-        f"{tipo_registro}"
-        f"{acao}"
-        f"{nome_participante}"
-        f"{data_envio}"
-        f"{versao_layout}"
-        f"{delimitador}"
-    )
-    return header
-
-def gerar_arquivo(dados, output_file):
-    try:
-        with open(output_file, "w") as f:
-            f.write(gerar_header() + "\n")
-            for row in dados:
-                linha = (
-                    f"{row.get('Tipo_IF').ljust(5)}"  # Tipo IF
-                    f"{row.get('Tipo_Registro', '1').ljust(1)}"  # Tipo de Registro
-                    f"{row.get('Acao', 'INCL').ljust(4)}"  # Ação
-                    f"{(row.get('Codigo_IF') or '').rjust(14)}"  # Código IF
-                    f"{(row.get('Conta_Escriturador', CONTA_ESCRITURADOR) or CONTA_ESCRITURADOR).rjust(8)}"  # Conta Escriturador
-                    f"{(row.get('Conta_do_Titular', '') or '').rjust(8)}"  # Conta do Titular
-                    f"{re.sub(r'\D', '', (row.get('CNPJ_Titular', CNPJ_TITULAR) or CNPJ_TITULAR)).rjust(14)}"  # CPF/CNPJ do Titular
-                    f"{remover_acentos(row.get('Razao_Titular', RAZAO_TITULAR) or RAZAO_TITULAR).ljust(100)}"  # Razão Social do Titular
-                    f"{(row.get('Meu_Numero') or '').rjust(10)}"  # Meu Número
-                    f"{(row.get('Manutencao') or '').rjust(2)}"  # Manutenção Unilateral
-                    f"{(row.get('Tipo_Regime') or '2').ljust(1)}"  # Tipo de Regime
-                    f"{re.sub(r'\D', '', (row.get('CNPJ_Credor', '0') or '0')).rjust(14)}"  # CPF/CNPJ do Credor
-                    f"{remover_acentos(row.get('Razao_Credor') or 'RAZAO_CREDOR').ljust(100)}"  # Razão Social do Credor
-                    f"{re.sub(r'\D', '', (row.get('CNPJ_Devedor', '0') or '0')).rjust(14)}"  # CPF/CNPJ do Devedor
-                    f"{remover_acentos(row.get('Razao_Devedor') or 'RAZAO_DEVEDOR').ljust(100)}"  # Razão Social do Devedor
-                    f"{re.sub(r'\D', '', str(row.get('Valor_Face', 0))).rjust(18, '0')}"  # Valor de Face
-                    f"{re.sub(r'\D', '', str(row.get('Valor_Atualizado', 0))).rjust(18, '0')}"  # Valor Atualizado
-                    f"{re.sub(r'\D', '', row.get('Data_Valor_Atualizado') or '').rjust(8)}"  # Data do Valor Atualizado
-                    f"{re.sub(r'\D', '', row.get('Data_Emissao') or '').rjust(8)}"  # Data de Emissão
-                    f"{re.sub(r'\D', '', row.get('Data_Vencimento') or '').rjust(8)}"  # Data de Vencimento
-                    f"{re.sub(r'\D', '', row.get('Vencimento_Atualizada') or '').rjust(8)}"  # Data de Vencimento Atualizada
-                    f"{(row.get('UF') or 'UF').rjust(2)}"  # UF da Praça de Pagamento
-                    f"{remover_acentos(row.get('CIDADE') or 'CIDADE').rjust(40)}"  # Município da Praça de Pagamento
-                    f"{(row.get('Especie_Titulo') or '02').rjust(2)}"  # Espécie de Título
-                    f"{(row.get('Numero_Titulo') or '').rjust(10)}"  # Número do Título
-                    f"{(row.get('Serie') or '').rjust(3)}"  # Série da Nota Fiscal
-                    f"{(row.get('Numero') or '').rjust(9)}"  # Número da Nota Fiscal
-                    f"{''.rjust(8)}"  # Data de Assinatura do Credor
-                    f"{''.rjust(8)}"  # Data de Assinatura do Devedor
-                    f"{''.ljust(100)}"  # Nome do Custodiante da Guarda Física (Opcional para INCL do tipo IF e DC)
-                    f"{re.sub(r'\D', '', (str(row.get('Bordero')) + str(row.get('Numero_Titulo')))).rjust(40)}"  # Número de Controle Interno (Borderô + Núm. do Título)
-                    f"{''.ljust(14)}"  # Código IF do Lote (Obrigatório apenas se DC for vinculado a um lote)
-                    f"{(row.get('Chave') or '').ljust(44)}"  # Chave de Acesso/Código de Verificação (NF-e/NFS-e)
-                    f"{('01' if row.get('Situacao') == 'PAGO' else '02').rjust(2)}"  # Status do Pagamento (01 - Pago, 02 - Em Aberto)
-                    f"{'01'.rjust(2)}"  # Forma de Pagamento (01 - Boleto, 02 - TED, 03 - DOC, 04 - Dinheiro, 05 - Título)
-                    f"{''.rjust(2)}"  # Tipo de Garantia (Opcional para INCL do tipo IF e DC | 01 - Aval)
-                    f"{''.ljust(100)}"  # Nome do Garantidor (Opcional para INCL do tipo IF e DC)
-                    f"{''.ljust(500)}"  # Descrição Adicional (Opcional para INCL do tipo IF e DC)
-                    f"{re.sub(r'\D', '', str(row.get('Valor_nota_fiscal', 0))).rjust(18, '0')}"  # Valor Total da Nota Fiscal
-                    f"{''.rjust(8)}"  # Taxa de Juros/Índice de Reajuste
-                    f"{'0'.rjust(4, '0')}"  # Número de Parcelas
-                    f"{''.rjust(7)}"  # Código do IBGE
-                    f"{'N'.rjust(1)}"  # Operação Informada no SCR
-                    f"{''.rjust(100)}"  # IPOC
-                    f"<"  # Delimitador
-                )
-                f.write(linha + "\n")
-    except Exception as e:
-        messagebox.showerror("Erro na Exportação", f"Erro ao gerar o arquivo: {e}")
-
-def validar_bordero(bordero):
-    if not bordero.isdigit():
-        messagebox.showerror("Erro", "O número do Borderô deve conter apenas dígitos!")
-        return False
-    return True
-
-def centralizar_janela(root, largura=500, altura=300):
-    """Centraliza a janela na tela."""
-    # Pega a largura e altura da tela
-    largura_tela = root.winfo_screenwidth()
-    altura_tela = root.winfo_screenheight()
-
-    # Calcula as coordenadas para centralizar
-    pos_x = (largura_tela // 2) - (largura // 2)
-    pos_y = (altura_tela // 2) - (altura // 2)
-
-    # Define a geometria da janela
-    root.geometry(f"{largura}x{altura}+{pos_x}+{pos_y}")
-
+# Update Service
 def verificar_atualizacao():
     """Verifica se há uma nova versão disponível no GitHub"""
     try:
@@ -596,6 +250,7 @@ def instalar_atualizacao(arquivo_path, root):
         messagebox.showerror("Erro na atualização", f"Não foi possível atualizar: {e}")
         return False
 
+# Main Window
 def interface():
     # Criar janela principal (inicialmente oculta)
     root = ThemedTk(theme="azure")
@@ -606,40 +261,9 @@ def interface():
     splash = SplashScreen(root)
     
     # Funções auxiliares que serão usadas na inicialização
-    def carregar_historico():
-        """Carrega o histórico de operações do arquivo JSON"""
-        try:
-            if Path("historico_operacoes.json").exists():
-                with open("historico_operacoes.json", "r") as f:
-                    return json.load(f)
-        except Exception as e:
-            print(f"Erro ao carregar histórico: {e}")
-        return []
-    
-    def fazer_backup_arquivo(arquivo_original, bordero):
-        """Cria uma cópia do arquivo gerado na pasta de backups"""
-        try:
-            if not arquivo_original:
-                return None
-                
-            # Garantir que o nome do arquivo seja seguro para o sistema de arquivos
-            bordero_seguro = re.sub(r'[^\w\-_]', '_', bordero)
-            
-            # Obter a extensão do arquivo original
-            _, ext = os.path.splitext(arquivo_original)
-            
-            # Criar nome do arquivo de backup com timestamp para evitar sobrescrever
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            backup_filename = f"bordero_{bordero_seguro}_{timestamp}{ext}"
-            backup_path = Path("backups") / backup_filename
-            
-            # Copiar o arquivo
-            shutil.copy2(arquivo_original, backup_path)
-            
-            return str(backup_path)
-        except Exception as e:
-            atualizar_status(f"Erro ao criar backup: {e}", "error")
-            return None
+    history_service = HistoryService()
+    file_service = FileService()
+    backup_service = BackupService()
     
     def limpar_historico_e_backups():
         """Limpa o histórico de operações e os arquivos de backup"""
@@ -654,9 +278,10 @@ def interface():
                 return
                 
             # Limpar histórico
-            historico_operacoes.clear()
+            history_service.limpar_historico()
+            history_service.salvar_historico()
+
             atualizar_lista_historico()
-            salvar_historico()
             
             # Limpar arquivos de backup
             for arquivo in Path("backups").glob("*"):
@@ -715,12 +340,13 @@ def interface():
                 mod_time_str = mod_time.strftime("%d/%m/%Y %H:%M:%S")
                 
                 # Extrair o número do borderô do nome do arquivo
+                # Atualizar para usar o novo formato de nome do arquivo de backup (sem prefixo bordero_)
                 nome_arquivo = backup.name
-                match = re.search(r'bordero_(\w+)_', nome_arquivo)
+                match = re.search(r'(\d+)_', nome_arquivo)
                 bordero_num = match.group(1) if match else "N/A"
                 
                 # Adicionar à lista
-                backup_listbox.insert(tk.END, f"Borderô: {bordero_num} - {mod_time_str} - {nome_arquivo}")
+                backup_listbox.insert(tk.END, f"Borderô: {bordero_num} Data: {mod_time_str} Arquivo: {nome_arquivo}")
             
             # Frame para botões
             button_frame = ttk.Frame(main_frame)
@@ -743,7 +369,7 @@ def interface():
                         subprocess.call(('open' if sys.platform == 'darwin' else 'xdg-open', str(arquivo_backup)))
                     
                     backup_window.destroy()
-                    adicionar_historico(f"Arquivo de backup aberto: {arquivo_backup.name}")
+                    history_service.adicionar_historico(f"Arquivo de backup aberto: {arquivo_backup.name}")
                 except Exception as e:
                     messagebox.showerror("Erro", f"Erro ao abrir o arquivo: {e}")
             
@@ -757,6 +383,7 @@ def interface():
         except Exception as e:
             atualizar_status(f"Erro ao abrir janela de backups: {e}", "error")
     
+    # Função usada pela interface para atualizar a mensagem de status
     def atualizar_status(mensagem, tipo="info"):
         """Atualiza a mensagem de status na barra inferior"""
         if not status_label:
@@ -773,7 +400,8 @@ def interface():
         else:
             status_label.config(foreground="black")
         root.update_idletasks()
-        
+
+    # Função usada pela interface para atualizar a barra de progresso
     def mostrar_progresso(progresso):
         """Atualiza a barra de progresso"""
         if not progress_bar:
@@ -781,34 +409,17 @@ def interface():
             
         progress_bar["value"] = progresso
         root.update_idletasks()
-        
-    def adicionar_historico(operacao):
-        """Adiciona uma operação ao histórico"""
-        data_atual = datetime.now().strftime("%d/%m/%Y %H:%M")
-        historico_operacoes.append({
-            "data": data_atual,
-            "operacao": operacao
-        })
-        salvar_historico()
-        atualizar_lista_historico()
-        
+
+    # Função usada pela interface para atualizar a lista de histórico
     def atualizar_lista_historico():
         """Atualiza a lista de histórico na interface"""
         if not historico_list:
             return
             
         historico_list.delete(0, tk.END)
-        for item in historico_operacoes:
+        for item in history_service.historico_operacoes:
             historico_list.insert(tk.END, f"{item['data']} - {item['operacao']}")
-    
-    def salvar_historico():
-        """Salva o histórico de operações em um arquivo JSON"""
-        try:
-            with open("historico_operacoes.json", "w") as f:
-                json.dump(historico_operacoes, f)
-        except Exception as e:
-            print(f"Erro ao salvar histórico: {e}")
-    
+ 
     def iniciar_geracao(event=None):
         """Inicia a geração do arquivo em uma thread separada"""
         def processo_geracao():
@@ -830,19 +441,18 @@ def interface():
             combobox_carteira.config(state="disabled")
             gerar_botao.config(state="disabled")
 
+            # Conecta ao banco de dados e executa a consulta
+            # Atualiza o status e a barra de progresso da interface
             try:
-                # Conectar ao banco de dados
                 atualizar_status("Conectando ao banco de dados...", "info")
                 mostrar_progresso(20)
-                conn = conectar_banco()
-                if not conn:
-                    atualizar_status("Erro: Não foi possível conectar ao banco.", "error")
-                    return
 
-                # Executar a query
                 atualizar_status("Executando consulta...", "info")
                 mostrar_progresso(40)
-                dados = executar_query(conn, bordero, carteira_id)
+
+                # Executa a consulta
+                dados = BorderoService().consultar_bordero(bordero, carteira_id)
+                
                 if not dados:
                     atualizar_status("Erro: Nenhum dado retornado para o Borderô.", "error")
                     return
@@ -860,29 +470,44 @@ def interface():
                 atualizar_status(f"Consulta concluída - {resumo_situacao}", "info")
 
                 mostrar_progresso(60)
+                
                 # Selecionar nome do arquivo para salvar
+                atualizar_status("Selecionando arquivo para salvar...", "info")
+                mostrar_progresso(70)
+                
                 arquivo_nome = filedialog.asksaveasfilename(
                     title="Salvar Arquivo de Posições",
                     defaultextension=".txt",
                     filetypes=[("Arquivos de Texto", "*.txt")]
                 )
 
+                # Se o usuário cancelou a seleção do arquivo, cancela a geração
+                if not arquivo_nome:
+                    atualizar_status("Geração cancelada pelo usuário.", "info")
+                    return
+
+                # Se o usuário selecionou um arquivo, continua a geração
                 if arquivo_nome:
                     atualizar_status("Gerando arquivo, aguarde...", "info")
                     mostrar_progresso(80)
-                    gerar_arquivo(dados, arquivo_nome)
+
+                    # Gera o arquivo remessa de posições
+                    file_service.gerar_arquivo(dados, arquivo_nome)
                     arquivo_salvo[0] = arquivo_nome
                     
                     # Criar backup do arquivo
-                    backup_path = fazer_backup_arquivo(arquivo_nome, bordero)
+                    backup_path = backup_service.criar_backup(arquivo_nome, bordero)
                     
+                    # Reabilita o botão de geração
                     abrir_botao.config(state="normal")
+
+                    # Atualiza a barra de progresso e a mensagem de status
                     mostrar_progresso(100)
                     atualizar_status("Arquivo gerado com sucesso!", "success")
                     
                     # Adicionar ao histórico com informação do backup
                     info_backup = f" (Backup: {os.path.basename(backup_path)})" if backup_path else ""
-                    adicionar_historico(f"Arquivo gerado: {arquivo_nome} (Borderô: {bordero}){info_backup}")
+                    history_service.adicionar_historico(f"Arquivo gerado: {arquivo_nome} (Borderô: {bordero}){info_backup}")
                 
             except Exception as e:
                 atualizar_status(f"Erro: {str(e)}", "error")
@@ -896,20 +521,6 @@ def interface():
 
         # Iniciar processo em thread separada
         threading.Thread(target=processo_geracao, daemon=True).start()
-
-    def abrir_arquivo():
-        """Abre o arquivo gerado"""
-        if arquivo_salvo[0]:
-            try:
-                if os.name == 'nt':  # Windows
-                    os.startfile(arquivo_salvo[0])
-                elif os.name == 'posix':  # macOS ou Linux
-                    subprocess.call(('open' if sys.platform == 'darwin' else 'xdg-open', arquivo_salvo[0]))
-                adicionar_historico(f"Arquivo aberto: {arquivo_salvo[0]}")
-            except Exception as e:
-                atualizar_status(f"Erro ao abrir o arquivo: {e}", "error")
-        else:
-            atualizar_status("Nenhum arquivo disponível para abrir.", "warning")
     
     def mostrar_detalhes_situacao(dados):
         """Mostra uma janela com detalhes da situação de cada título"""
@@ -1196,6 +807,20 @@ def interface():
             f"{APP_NAME}\nVersão {APP_VERSION}\n\nDesenvolvido por Arthur Morais\n© 2024 Todos os direitos reservados"
         )
     
+    def mostrar_configuracoes():
+        """Mostra as configurações carregadas (para debug)"""
+        config_ok, config_msg = verificar_configuracoes_banco(settings)
+        
+        info = f"Status das Configurações:\n{config_msg}\n\n"
+        info += f"DB_SERVER: {'✓' if settings.db_server else '✗'} {settings.db_server or 'Não configurado'}\n"
+        info += f"DB_NAME: {'✓' if settings.db_name else '✗'} {settings.db_name or 'Não configurado'}\n"
+        info += f"DB_USER: {'✓' if settings.db_user else '✗'} {settings.db_user or 'Não configurado'}\n"
+        info += f"DB_PASSWORD: {'✓' if settings.db_password else '✗'} {'***' if settings.db_password else 'Não configurado'}\n\n"
+        info += f"Executável: {'Sim' if getattr(sys, 'frozen', False) else 'Não'}\n"
+        info += f"Diretório atual: {os.getcwd()}"
+        
+        messagebox.showinfo("Configurações", info)
+    
     # Modificar a abordagem de inicialização para evitar problemas de threading com Tcl
     def inicializar_com_atraso():
         try:
@@ -1208,7 +833,7 @@ def interface():
             style.configure("Custom.TButton", font=("Segoe UI", 9), padding=5)
             
             # Variáveis de controle
-            nonlocal arquivo_salvo, historico_operacoes, dados_ultima_consulta
+            nonlocal arquivo_salvo, dados_ultima_consulta
             nonlocal status_label, progress_bar, historico_list, entry_bordero, combobox_carteira, gerar_botao, abrir_botao
             
             # Criar pasta de backups se não existir
@@ -1219,7 +844,7 @@ def interface():
             
             # Carregar histórico
             splash.update_progress(30, "Carregando histórico...")
-            historico_operacoes = carregar_historico()
+            history_service.carregar_historico()
             
             # Verificar atualizações
             splash.update_progress(40, "Verificando atualizações...")
@@ -1244,7 +869,7 @@ def interface():
             arquivo_menu = tk.Menu(menu_bar, tearoff=0)
             menu_bar.add_cascade(label="Arquivo", menu=arquivo_menu)
             arquivo_menu.add_command(label="Gerar Novo Arquivo", command=iniciar_geracao)
-            arquivo_menu.add_command(label="Abrir Último Arquivo", command=abrir_arquivo)
+            arquivo_menu.add_command(label="Abrir Último Arquivo", command=file_service.abrir_arquivo)
             arquivo_menu.add_command(label="Abrir Arquivo de Backup", command=abrir_backup)
             arquivo_menu.add_separator()
             arquivo_menu.add_command(label="Ver Detalhes da Situação", command=lambda: mostrar_detalhes_situacao(dados_ultima_consulta[0]) if dados_ultima_consulta[0] else messagebox.showinfo("Informação", "Execute uma consulta primeiro para ver os detalhes."))
@@ -1256,6 +881,7 @@ def interface():
             ajuda_menu = tk.Menu(menu_bar, tearoff=0)
             menu_bar.add_cascade(label="Ajuda", menu=ajuda_menu)
             ajuda_menu.add_command(label="Verificar Atualizações", command=lambda: threading.Thread(target=lambda: mostrar_atualizacao_disponivel(verificar_atualizacao()) if verificar_atualizacao()['disponivel'] else messagebox.showinfo("Atualização", "Você já está usando a versão mais recente."), daemon=True).start())
+            ajuda_menu.add_command(label="Ver Configurações", command=mostrar_configuracoes)
             ajuda_menu.add_command(label="Sobre", command=sobre)
             
             # Frame principal
@@ -1285,7 +911,7 @@ def interface():
             gerar_botao = ttk.Button(button_frame, text="Gerar Arquivo", command=iniciar_geracao, style="Custom.TButton")
             gerar_botao.pack(side=tk.LEFT, padx=5)
             
-            abrir_botao = ttk.Button(button_frame, text="Abrir Arquivo", command=abrir_arquivo, 
+            abrir_botao = ttk.Button(button_frame, text="Abrir Arquivo", command=file_service.abrir_arquivo, 
                                 state="disabled", style="Custom.TButton")
             abrir_botao.pack(side=tk.LEFT, padx=5)
             
@@ -1350,7 +976,6 @@ def interface():
     
     # Variáveis globais para o escopo da interface
     arquivo_salvo = [None]
-    historico_operacoes = []
     dados_ultima_consulta = [None]  # Armazena os dados da última consulta
     
     # Definir variáveis para componentes de interface que serão acessados por funções
@@ -1362,7 +987,7 @@ def interface():
     gerar_botao = None
     abrir_botao = None
     
-    # Funções para atualizar a interface
+    # Funções usadas pela interface para atualizar a mensagem de status
     def atualizar_status(mensagem, tipo="info"):
         """Atualiza a mensagem de status na barra inferior"""
         if not status_label:
@@ -1380,6 +1005,7 @@ def interface():
             status_label.config(foreground="black")
         root.update_idletasks()
         
+    # Função usada pela interface para atualizar a barra de progresso
     def mostrar_progresso(progresso):
         """Atualiza a barra de progresso"""
         if not progress_bar:
@@ -1387,14 +1013,12 @@ def interface():
             
         progress_bar["value"] = progresso
         root.update_idletasks()
-        
-    def atualizar_lista_historico():
         """Atualiza a lista de histórico na interface"""
         if not historico_list:
             return
             
         historico_list.delete(0, tk.END)
-        for item in historico_operacoes:
+        for item in history_service.historico_operacoes:
             historico_list.insert(tk.END, f"{item['data']} - {item['operacao']}")
     
     # Iniciar a inicialização na thread principal usando after

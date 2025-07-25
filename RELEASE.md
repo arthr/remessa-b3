@@ -24,7 +24,7 @@ O projeto segue o padrão [SemVer](https://semver.org/) para versionamento:
 
 3. **Compilar a Aplicação**:
    ```
-   pyinstaller remessa-b3.spec
+   ./build.bat
    ```
 
 4. **Testar o Executável**:
