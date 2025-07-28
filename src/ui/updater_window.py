@@ -1,38 +1,21 @@
-import sys
-import os
-import requests
-import time
+# src/ui/updater_window.py
 import threading
 import tkinter as tk
 from tkinter import ttk, messagebox
-from pathlib import Path
-import subprocess
-import json
-
-# Adicionar o diretório src ao sys.path para permitir importações
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
-
-from src.config.settings import Settings
-from src.services import UpdateService
-from src.utils import (
+from ttkthemes import ThemedTk
+from ..config.settings import Settings
+from ..services import UpdateService
+from ..utils import (
     centralizar_janela
 )
 
-settings = Settings()
-update_service = UpdateService()
-
-# Variáveis globais
-download_url = None
-versao = None
-destino = None
-app_exec = None
-download_concluido = False
-arquivo_baixado = None
-
-class UpdaterApp:
-    def __init__(self, root):
-        self.root = root
-        self.root.title(f"{settings.app_name} - Updater")
+class UpdaterWindow:
+    def __init__(self, parent):
+        self.parent = parent
+        self.root = ThemedTk(theme="azure")
+        self.settings = Settings()
+        self.update_service = UpdateService()
+        self.root.title(f"{self.settings.app_name} - Updater")
         self.root.geometry("500x400")
         
         # Centralizar janela
@@ -50,7 +33,7 @@ class UpdaterApp:
         self.info_frame = ttk.Frame(self.main_frame)
         self.info_frame.pack(fill=tk.X, pady=5)
         
-        ttk.Label(self.info_frame, text=f"Baixando a versão: {versao}").pack(anchor="w", pady=2)
+        ttk.Label(self.info_frame, text=f"Baixando a versão: {self.settings.app_version}").pack(anchor="w", pady=2)
         
         # Barra de progresso
         self.progress_frame = ttk.Frame(self.main_frame)
@@ -102,7 +85,7 @@ class UpdaterApp:
         
         # Iniciar o download
         self.atualizar_status("Iniciando download da nova versão...")
-        threading.Thread(target=update_service.download_update, args=(download_url, versao, self.atualizar_progresso, self.download_finalizado), daemon=True).start()
+        threading.Thread(target=self.update_service.download_update, args=(download_url, versao, self.atualizar_progresso, self.download_finalizado), daemon=True).start()
     
     # Callback de conclusão do download - Essa função deveria estar aqui?
     def download_finalizado(self, filepath):
@@ -118,11 +101,11 @@ class UpdaterApp:
         self.progress_label.config(text="Download concluído!")
         
         # Modificar botão para instalar
-        self.cancelar_btn.config(text="Instalar Agora", command=self.install_update)
+        self.cancelar_btn.config(text="Instalar Agora", command=lambda: self.install_update(arquivo_baixado, app_exec))
     
-    def install_update(self):
+    def install_update(self, arquivo_baixado, app_exec):
         """Instala a atualização substituindo o executável atual"""
-        installed = update_service.install_update(arquivo_baixado, app_exec)
+        installed = self.update_service.install_update(arquivo_baixado, app_exec)
         if installed:
             self.atualizar_status("Atualização instalada com sucesso!")
             self.root.quit()
@@ -141,25 +124,8 @@ class UpdaterApp:
         """Cancela o download e fecha a aplicação"""
         if messagebox.askyesno("Cancelar Download", "Deseja realmente cancelar a atualização?"):
             self.root.destroy()
-
-def main():
-    """Função principal do atualizador"""
-    global download_url, versao, app_exec
     
-    # Verificar argumentos
-    if len(sys.argv) < 4:
-        print("Uso: updater.py <download_url> <versao> <app_executable>")
-        return
-    
-    # Extrair argumentos
-    download_url = sys.argv[1]
-    versao = sys.argv[2]
-    app_exec = sys.argv[3]
-    
-    # Iniciar interface
-    root = tk.Tk()
-    app = UpdaterApp(root)
-    root.mainloop()
-
-if __name__ == "__main__":
-    main()
+    def destroy(self):
+        """Destrói a janela"""
+        if self.root:
+            self.root.destroy()

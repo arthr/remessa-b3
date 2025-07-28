@@ -2,8 +2,8 @@
 from typing import List, Dict
 from datetime import datetime
 from .history_service import HistoryService
-from src.config.constants import AppConstants
-from src.utils.text_utils import remover_acentos
+from ..config.settings import Settings
+from ..utils.text_utils import remover_acentos
 import re
 import os
 import subprocess
@@ -11,7 +11,7 @@ import sys
 
 class FileService:
     def __init__(self):
-        self.constants = AppConstants()
+        self.settings = Settings()
         self.arquivo_gerado = None
         self.history_service = HistoryService()
     def gerar_header(self) -> str:
@@ -46,10 +46,10 @@ class FileService:
                         f"{row.get('Tipo_Registro', '1').ljust(1)}"  # Tipo de Registro
                         f"{row.get('Acao', 'INCL').ljust(4)}"  # Ação
                         f"{(row.get('Codigo_IF') or '').rjust(14)}"  # Código IF
-                        f"{(row.get('Conta_Escriturador', self.constants.CONTA_ESCRITURADOR) or self.constants.CONTA_ESCRITURADOR).rjust(8)}"  # Conta Escriturador
+                        f"{(row.get('Conta_Escriturador', self.settings.conta_escriturador) or self.settings.conta_escriturador).rjust(8)}"  # Conta Escriturador
                         f"{(row.get('Conta_do_Titular', '') or '').rjust(8)}"  # Conta do Titular
-                        f"{re.sub(r'\D', '', (row.get('CNPJ_Titular', self.constants.CNPJ_TITULAR) or self.constants.CNPJ_TITULAR)).rjust(14)}"  # CPF/CNPJ do Titular
-                        f"{remover_acentos(row.get('Razao_Titular', self.constants.RAZAO_TITULAR) or self.constants.RAZAO_TITULAR).ljust(100)}"  # Razão Social do Titular
+                        f"{re.sub(r'\D', '', (row.get('CNPJ_Titular', self.settings.cnpj_titular) or self.settings.cnpj_titular)).rjust(14)}"  # CPF/CNPJ do Titular
+                        f"{remover_acentos(row.get('Razao_Titular', self.settings.razao_titular) or self.settings.razao_titular).ljust(100)}"  # Razão Social do Titular
                         f"{(row.get('Meu_Numero') or '').rjust(10)}"  # Meu Número
                         f"{(row.get('Manutencao') or '').rjust(2)}"  # Manutenção Unilateral
                         f"{(row.get('Tipo_Regime') or '2').ljust(1)}"  # Tipo de Regime

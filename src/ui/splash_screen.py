@@ -2,13 +2,13 @@
 import tkinter as tk
 from tkinter import ttk, Canvas
 from PIL import Image, ImageTk
-from ..config.constants import AppConstants
+from ..config.settings import Settings
 from ..utils.path_utils import resource_path
 
 class SplashScreen:
     def __init__(self, parent):
         self.parent = parent
-        self.constants = AppConstants()
+        self.settings = Settings()
         self.splash = None
         self.canvas = None
         self.progress_var = None
@@ -58,7 +58,7 @@ class SplashScreen:
             
             # Adicionar texto de versão
             self.canvas.create_text(width//2, height-20, 
-                                   text=f"Versão {self.constants.APP_VERSION}", 
+                                   text=f"Versão {self.settings.app_version}", 
                                    fill="#333333", font=("Segoe UI", 10))
             
             # Adicionar barra de progresso

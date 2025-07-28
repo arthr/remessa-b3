@@ -25,8 +25,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 from config.settings import Settings
 from src.database.connection import DatabaseConnection
 from src.ui import SplashScreen
+from src.ui.dialogs import UpdateAvailableDialog
 from src.services import (
-    HistoryService, FileService, BackupService, BorderoService
+    HistoryService, FileService, BackupService, BorderoService, UpdateService
 )
 
 from src.utils import (
@@ -96,98 +97,6 @@ def verificar_atualizacao():
     except Exception as e:
         print(f"Erro ao verificar atualizações: {e}")
         return {'disponivel': False}
-
-def baixar_atualizacao(download_url, versao, root, progress_callback=None, complete_callback=None):
-    """
-    Baixa a atualização em uma thread separada
-    
-    Args:
-        download_url: URL para download do executável
-        versao: Versão que está sendo baixada
-        root: Referência à janela principal Tkinter
-        progress_callback: Função para atualizar o progresso (recebe porcentagem e velocidade)
-        complete_callback: Função chamada quando o download for concluído (recebe o caminho do arquivo)
-    """
-    def _download_task():
-        try:
-            if not download_url:
-                print("URL de download não encontrada.")
-                if complete_callback:
-                    root.after(0, lambda: complete_callback(None))
-                return
-            
-            # Criar pasta de atualizações se não existir
-            updates_dir = Path("updates")
-            if not updates_dir.exists():
-                updates_dir.mkdir()
-            
-            # Nome do arquivo de destino
-            filename = f"remessa-b3-v{versao}.exe"
-            filepath = updates_dir / filename
-            
-            # Configurar headers com token se disponível
-            headers = {
-                'Accept': 'application/octet-stream'  # Necessário para download de binários no GitHub
-            }
-            if GITHUB_TOKEN:
-                headers["Authorization"] = f"token {GITHUB_TOKEN}"
-            
-            # Realizar o download com relatório de progresso
-            response = requests.get(download_url, headers=headers, stream=True, timeout=30)
-            response.raise_for_status()
-            
-            # Obter o tamanho total do arquivo
-            total_size = int(response.headers.get('content-length', 0))
-            block_size = 1024 * 8  # 8 KiB por bloco
-            downloaded = 0
-            
-            # Variáveis para calcular velocidade
-            start_time = time.time()
-            last_time = start_time
-            last_downloaded = 0
-            
-            with open(filepath, 'wb') as f:
-                for data in response.iter_content(block_size):
-                    f.write(data)
-                    downloaded += len(data)
-                    
-                    # Calcular progresso e velocidade a cada 0.5 segundos
-                    current_time = time.time()
-                    if current_time - last_time > 0.5 or downloaded == total_size:
-                        # Calcular velocidade em KB/s
-                        elapsed = current_time - last_time
-                        chunk_size = downloaded - last_downloaded
-                        speed = chunk_size / elapsed if elapsed > 0 else 0
-                        
-                        # Converter para unidade apropriada
-                        speed_text = ""
-                        if speed > 1048576:  # 1 MB/s
-                            speed_text = f"{speed/1048576:.1f} MB/s"
-                        else:
-                            speed_text = f"{speed/1024:.1f} KB/s"
-                        
-                        # Atualizar progresso
-                        if total_size > 0 and progress_callback:
-                            progress = int((downloaded / total_size) * 100)
-                            # Chamada de progresso na thread principal com velocidade
-                            root.after(0, lambda p=progress, s=speed_text: progress_callback(p, s))
-                        
-                        # Atualizar variáveis para próxima iteração
-                        last_time = current_time
-                        last_downloaded = downloaded
-            
-            # Chamada de conclusão na thread principal
-            if complete_callback:
-                root.after(0, lambda: complete_callback(str(filepath)))
-            
-        except Exception as e:
-            print(f"Erro no download: {e}")
-            # Informar falha na thread principal
-            if complete_callback:
-                root.after(0, lambda: complete_callback(None))
-    
-    # Iniciar a tarefa de download em uma thread separada
-    threading.Thread(target=_download_task, daemon=True).start()
 
 def instalar_atualizacao(arquivo_path, root):
     """
@@ -264,6 +173,7 @@ def interface():
     history_service = HistoryService()
     file_service = FileService()
     backup_service = BackupService()
+    update_service = UpdateService()
     
     def limpar_historico_e_backups():
         """Limpa o histórico de operações e os arquivos de backup"""
@@ -627,186 +537,18 @@ def interface():
         button_frame.pack(fill=tk.X, pady=10)
         
         ttk.Button(button_frame, text="Fechar", command=detalhes_window.destroy).pack(side=tk.RIGHT, padx=5)
-            
-    def mostrar_atualizacao_disponivel(info_atualizacao):
-        """Mostra uma janela informando sobre a atualização disponível"""
-        update_window = tk.Toplevel(root)
-        update_window.title("Atualização Disponível")
-        update_window.geometry("500x450")  # Aumentei um pouco a altura para acomodar a barra de progresso
-        update_window.transient(root)
-        update_window.grab_set()
-        
-        # Centralizar a janela
-        centralizar_janela(update_window, 500, 450)
-        
-        # Frame principal
-        main_frame = ttk.Frame(update_window, padding=10)
-        main_frame.pack(fill=tk.BOTH, expand=True)
-        
-        # Título
-        ttk.Label(main_frame, text="Nova Versão Disponível!", 
-                 font=("Segoe UI", 12, "bold")).pack(pady=10)
-        
-        # Informações da versão
-        ttk.Label(main_frame, text=f"Versão atual: {APP_VERSION}").pack(anchor="w", pady=2)
-        ttk.Label(main_frame, text=f"Nova versão: {info_atualizacao['versao']}").pack(anchor="w", pady=2)
-        
-        # Notas de lançamento
-        ttk.Label(main_frame, text="Notas de lançamento:", font=("Segoe UI", 10, "bold")).pack(anchor="w", pady=5)
-        
-        # Frame para as notas com scrollbar
-        notes_frame = ttk.Frame(main_frame)
-        notes_frame.pack(fill=tk.BOTH, expand=True, pady=5)
-        
-        scrollbar = ttk.Scrollbar(notes_frame)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        
-        notes_text = tk.Text(notes_frame, wrap=tk.WORD, height=10, yscrollcommand=scrollbar.set)
-        notes_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        scrollbar.config(command=notes_text.yview)
-        
-        notes_text.insert(tk.END, info_atualizacao['notas'])
-        notes_text.config(state=tk.DISABLED)
-        
-        # Frame para a barra de progresso (inicialmente escondido)
-        progress_frame = ttk.Frame(main_frame)
-        progress_frame.pack(fill=tk.X, pady=5)
-        progress_frame.pack_forget()  # Esconder inicialmente
-        
-        progress_bar = ttk.Progressbar(progress_frame, mode='determinate', length=100)
-        progress_bar.pack(fill=tk.X, padx=5, pady=5)
-        
-        progress_label = ttk.Label(progress_frame, text="Iniciando download...")
-        progress_label.pack(anchor="w", pady=2)
-        
-        # Frame para botões
-        button_frame = ttk.Frame(main_frame)
-        button_frame.pack(fill=tk.X, pady=10)
-        
-        # Variáveis para controle do download
-        download_em_andamento = [False]
-        download_concluido = [False]
-        arquivo_baixado = [None]
-        
-        def atualizar_progresso(porcentagem, velocidade=""):
-            """Atualiza a barra de progresso e exibe a velocidade"""
-            progress_bar['value'] = porcentagem
-            texto = f"Baixando: {porcentagem}%"
-            if velocidade:
-                texto += f" ({velocidade})"
-            progress_label.config(text=texto)
-            
-        def download_finalizado(arquivo_path):
-            """Chamado quando o download é concluído ou falha"""
-            download_em_andamento[0] = False
-            
-            if arquivo_path:
-                # Download concluído com sucesso
-                download_concluido[0] = True
-                arquivo_baixado[0] = arquivo_path
-                progress_label.config(text="Download concluído com sucesso!")
-                baixar_btn.config(text="Instalar Agora", command=iniciar_instalacao)
-            else:
-                # Falha no download
-                progress_label.config(text="Falha no download. Tente novamente.")
-                baixar_btn.config(text="Tentar Novamente", state="normal")
-        
-        def iniciar_download():
-            """Inicia o processo de atualização executando o updater.py"""
-            if not info_atualizacao.get('download_url'):
-                messagebox.showwarning("Download Indisponível", 
-                                      "Não foi possível encontrar o link de download automático. "
-                                      "Por favor, visite a página de releases para baixar manualmente.")
-                abrir_pagina_download()
-                return
-            
-            try:
-                # Obter o caminho do executável atual
-                current_exe = os.path.abspath(sys.executable)
-                
-                # Verificar se estamos em modo de desenvolvimento
-                if not getattr(sys, 'frozen', False):
-                    # Em modo de desenvolvimento, usar Python para executar o script
-                    updater_cmd = [sys.executable, "updater.py", 
-                                  info_atualizacao['download_url'], 
-                                  info_atualizacao['versao'],
-                                  current_exe]
-                    messagebox.showinfo("Modo Desenvolvimento", 
-                                      "Executando em modo de desenvolvimento. O atualizador será iniciado, mas não poderá substituir o executável.")
-                else:
-                    # Em modo executável, executar o updater diretamente
-                    updater_cmd = ["updater.exe", 
-                                  info_atualizacao['download_url'], 
-                                  info_atualizacao['versao'],
-                                  current_exe]
-                
-                # Iniciar o processo do updater
-                subprocess.Popen(updater_cmd)
-                
-                # Fechar a janela de atualização
-                update_window.destroy()
-                
-                # Iniciar verificação periódica do sinal de atualização
-                verificar_sinal_atualizacao()
-                
-            except Exception as e:
-                messagebox.showerror("Erro ao Iniciar Atualização", 
-                                    f"Não foi possível iniciar o atualizador: {e}")
-        
-        def verificar_sinal_atualizacao():
-            """Verifica periodicamente se o updater sinalizou para encerrar a aplicação"""
-            signal_file = Path("updates") / "update_ready.signal"
-            
-            if signal_file.exists():
-                # Se o sinal existir, remover o arquivo e encerrar a aplicação
-                try:
-                    signal_file.unlink()
-                except:
-                    pass
-                messagebox.showinfo("Atualizando", "A aplicação será encerrada para concluir a atualização.")
-                root.quit()
-            else:
-                # Verificar novamente após 1 segundo
-                root.after(1000, verificar_sinal_atualizacao)
-        
-        def abrir_pagina_download():
-            """Abre a página de download no navegador"""
-            webbrowser.open(info_atualizacao['url'])
-            update_window.destroy()
-        
-        def iniciar_instalacao():
-            """Inicia a instalação da atualização"""
-            if arquivo_baixado[0]:
-                update_window.destroy()
-                instalar_atualizacao(arquivo_baixado[0], root)
-        
-        # Botões
-        baixar_btn = ttk.Button(
-            button_frame, 
-            text="Baixar e Instalar Automaticamente",
-            command=iniciar_download
-        )
-        baixar_btn.pack(side=tk.LEFT, padx=5)
-        
-        ttk.Button(
-            button_frame, 
-            text="Baixar Manualmente", 
-            command=abrir_pagina_download
-        ).pack(side=tk.LEFT, padx=5)
-        
-        ttk.Button(
-            button_frame, 
-            text="Lembrar Depois", 
-            command=update_window.destroy
-        ).pack(side=tk.LEFT, padx=5)
 
+    # Mostra informações sobre o programa
+    # TODO: Migrar para UI/Dialogs
     def sobre():
         """Mostra informações sobre o programa"""
         messagebox.showinfo(
-            f"Sobre - {APP_NAME}",
-            f"{APP_NAME}\nVersão {APP_VERSION}\n\nDesenvolvido por Arthur Morais\n© 2024 Todos os direitos reservados"
+            f"Sobre - {settings.app_name}",
+            f"{settings.app_name}\nVersão {settings.app_version}\n\nDesenvolvido por Arthur Morais\n© {datetime.now().year} Todos os direitos reservados\n"
         )
     
+    # Mostra as configurações carregadas (para debug)
+    # TODO: Migrar para UI/Dialogs
     def mostrar_configuracoes():
         """Mostra as configurações carregadas (para debug)"""
         config_ok, config_msg = verificar_configuracoes_banco(settings)
@@ -848,7 +590,8 @@ def interface():
             
             # Verificar atualizações
             splash.update_progress(40, "Verificando atualizações...")
-            info_atualizacao = verificar_atualizacao()
+            update_service.check_for_updates()
+            info_atualizacao = update_service.get_update_info()
             
             # Configurar a janela principal
             splash.update_progress(60, "Configurando interface...")
@@ -880,7 +623,7 @@ def interface():
             
             ajuda_menu = tk.Menu(menu_bar, tearoff=0)
             menu_bar.add_cascade(label="Ajuda", menu=ajuda_menu)
-            ajuda_menu.add_command(label="Verificar Atualizações", command=lambda: threading.Thread(target=lambda: mostrar_atualizacao_disponivel(verificar_atualizacao()) if verificar_atualizacao()['disponivel'] else messagebox.showinfo("Atualização", "Você já está usando a versão mais recente."), daemon=True).start())
+            ajuda_menu.add_command(label="Verificar Atualizações", command=lambda: threading.Thread(target=lambda: UpdateAvailableDialog(root, update_service.get_update_info()) if update_service.get_update_info()['disponivel'] else messagebox.showinfo("Atualização", "Você já está usando a versão mais recente."), daemon=True).start())
             ajuda_menu.add_command(label="Ver Configurações", command=mostrar_configuracoes)
             ajuda_menu.add_command(label="Sobre", command=sobre)
             
@@ -964,7 +707,7 @@ def interface():
             # Verificar atualizações em segundo plano
             if info_atualizacao['disponivel']:
                 # Usar after para agendar na thread principal
-                root.after(1000, lambda: mostrar_atualizacao_disponivel(info_atualizacao))
+                root.after(1000, lambda: UpdateAvailableDialog(root, info_atualizacao))
         except Exception as e:
             print(f"Erro durante a inicialização: {e}")
             # Garantir que a splash screen seja fechada mesmo em caso de erro

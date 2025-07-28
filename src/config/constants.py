@@ -1,6 +1,6 @@
 # src/config/constants.py
 class AppConstants:
-    APP_VERSION = "1.1.0"
+    APP_VERSION = "1.3.0"
     APP_NAME = "Remessa B3"
     GITHUB_REPO = "arthr/remessa-b3"
     
