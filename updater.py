@@ -21,11 +21,14 @@ def main():
     versao = sys.argv[2]
     app_exec = sys.argv[3]
     
+    # Criar UpdateService
     update_service = UpdateService()
+    
     # Iniciar interface
     root = tk.Tk()
     root.withdraw()  # Ocultar janela raiz
     
+    # Criar UpdaterWindow com injeção de dependência
     updater_window = UpdaterWindow(root, download_url, versao, app_exec, update_service)
     updater_window.run()
 

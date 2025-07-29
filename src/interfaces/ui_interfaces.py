@@ -1,7 +1,8 @@
 # src/interfaces/ui_interfaces.py
-from typing import Protocol, Optional
+from typing import Protocol, Optional, runtime_checkable
 from ..models.update import UpdateInfo
 
+@runtime_checkable
 class UIManager(Protocol):
     """Interface para gerenciamento geral de UI"""
     def show_update_available_dialog(self, update_info: UpdateInfo) -> None: ...
