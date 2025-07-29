@@ -527,7 +527,7 @@ def interface():
             
             ajuda_menu = tk.Menu(menu_bar, tearoff=0)
             menu_bar.add_cascade(label="Ajuda", menu=ajuda_menu)
-            ajuda_menu.add_command(label="Verificar Atualizações", command=lambda: threading.Thread(target=lambda: UpdateAvailableDialog(root, update_service) if update_service.get_update_info()['disponivel'] else messagebox.showinfo("Atualização", "Você já está usando a versão mais recente."), daemon=True).start())
+            ajuda_menu.add_command(label="Verificar Atualizações", command=lambda: threading.Thread(target=lambda: UpdateAvailableDialog(root, update_service) if update_service.get_update_info().disponivel else messagebox.showinfo("Atualização", "Você já está usando a versão mais recente."), daemon=True).start())
             ajuda_menu.add_command(label="Ver Configurações", command=mostrar_configuracoes)
             ajuda_menu.add_command(label="Sobre", command=sobre)
             
@@ -609,7 +609,7 @@ def interface():
             splash.destroy()  # Fechar a splash screen
             
             # Verificar atualizações em segundo plano
-            if info_atualizacao['disponivel']:
+            if info_atualizacao.disponivel:
                 # Usar after para agendar na thread principal
                 root.after(1000, lambda: UpdateAvailableDialog(root, update_service))
         except Exception as e:

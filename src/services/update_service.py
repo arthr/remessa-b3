@@ -1,6 +1,6 @@
 # src/services/update_service.py
 
-from typing import Dict, Any
+from typing import Dict, Any, Optional, Callable
 import requests
 from packaging import version
 import threading
@@ -11,15 +11,17 @@ import subprocess
 import sys
 from ..config.constants import AppConstants
 from ..config.settings import Settings
+from ..interfaces.update_interfaces import UpdateChecker, UpdateDownloader, UpdateInstaller
+from ..models.update import UpdateInfo, DownloadResult, UpdateProgress
 
-class UpdateService:
+class UpdateService(UpdateChecker, UpdateDownloader, UpdateInstaller):
     def __init__(self):
         self.constants = AppConstants()
         self.settings = Settings()
-        self.update_info = {'disponivel': False}
+        self.update_info = UpdateInfo(disponivel=False)
 
-    def check_for_updates(self):
-        """Verifica se há atualizações (do app.py)"""
+    def check_for_updates(self) -> UpdateInfo:
+        """Verifica se há atualizações"""
         try:
             headers = {}
             if self.settings.github_token:
@@ -38,20 +40,22 @@ class UpdateService:
                             download_url = asset.get('browser_download_url')
                             break
 
-                    self.update_info = {
-                        'disponivel': True,
-                        'versao': ultima_versao,
-                        'url': dados.get('html_url', ''),
-                        'download_url': download_url,
-                        'notas': dados.get('body', 'Notas de lançamento não disponíveis.')
-                    }
+                    self.update_info = UpdateInfo(
+                        disponivel=True,
+                        versao=ultima_versao,
+                        url=dados.get('html_url', ''),
+                        download_url=download_url,
+                        notas=dados.get('body', 'Notas de lançamento não disponíveis.')
+                    )
         except Exception as e:
             print(f"Erro ao verificar atualizações: {e}")
-
-    def get_update_info(self):
+            self.update_info = UpdateInfo(disponivel=False)
+        
         return self.update_info
 
-    # TODO: Corrigir a execução do updater.py
+    def get_update_info(self) -> UpdateInfo:
+        return self.update_info
+
     def run_updater(self, download_url: str, versao: str, app_exec: str) -> None:
         """Executa o updater.py"""
         if not getattr(sys, 'frozen', False):
@@ -61,14 +65,10 @@ class UpdateService:
             ])
         else:
             subprocess.Popen(["updater.exe", download_url, versao, app_exec])
-        
-        # TODO: Finalizar migração do updater.py
-        # PAREI AQUI - RETOMAR
-        print(f"Executando o updater.py com os seguintes argumentos: {download_url}, {versao}, {app_exec}")
 
     def download_update(self, download_url: str, versao: str, 
-                                   progress_callback=None, complete_callback=None) -> None:
-        """Baixa a atualização com progresso e velocidade (do updater.py)"""
+                       progress_callback: Optional[Callable[[UpdateProgress], None]] = None) -> DownloadResult:
+        """Baixa a atualização com progresso e velocidade"""
         def _download_task():
             try:
                 # Criar pasta de atualizações
@@ -111,24 +111,36 @@ class UpdateService:
                             
                             # Callback de progresso
                             if total_size > 0 and progress_callback:
-                                progress = int((downloaded / total_size) * 100)
-                                progress_callback(progress, speed_text)
+                                progress = UpdateProgress(
+                                    porcentagem=int((downloaded / total_size) * 100),
+                                    velocidade=speed_text,
+                                    bytes_baixados=downloaded,
+                                    bytes_total=total_size
+                                )
+                                progress_callback(progress)
                             
                             last_time = current_time
                             last_downloaded = downloaded
                 
-                # Callback de conclusão
-                if complete_callback:
-                    complete_callback(str(filepath))
+                # Retornar resultado
+                return DownloadResult(sucesso=True, filepath=str(filepath))
                     
             except Exception as e:
-                if complete_callback:
-                    complete_callback(None)
+                return DownloadResult(sucesso=False, erro=str(e))
         
-        threading.Thread(target=_download_task, daemon=True).start()
+        # Executar em thread separada e retornar resultado
+        result = [None]
+        def _run_and_capture():
+            result[0] = _download_task()
+        
+        thread = threading.Thread(target=_run_and_capture, daemon=True)
+        thread.start()
+        thread.join()
+        
+        return result[0] if result[0] else DownloadResult(sucesso=False, erro="Erro desconhecido")
     
     def install_update(self, arquivo_path: str, app_exec: str) -> bool:
-        """Instala a atualização (do updater.py)"""
+        """Instala a atualização"""
         try:
             if not app_exec:
                 return False
@@ -169,8 +181,7 @@ class UpdateService:
             print(f"Erro na instalação: {e}")
             return False
     
-    # Verifica se o sinal de atualização existe e remove o arquivo
-    def check_update_signal(self):
+    def check_update_signal(self) -> bool:
         """Verifica se o sinal de atualização existe"""
         signal_file = Path("updates") / "update_ready.signal"
         if signal_file.exists():

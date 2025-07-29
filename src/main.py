@@ -13,8 +13,10 @@ from database.connection import DatabaseConnection
 from services.bordero_service import BorderoService
 from services.file_service import FileService
 from services.backup_service import BackupService
+from services.update_service import UpdateService
 from ui.splash_screen import SplashScreen
 from ui.main_window import MainWindow
+from ui.ui_manager import UIManagerImpl
 
 def main():
     """Ponto de entrada principal da aplicação"""
@@ -39,11 +41,17 @@ def main():
         bordero_service = BorderoService(db_connection)
         file_service = FileService()
         backup_service = BackupService()
+        update_service = UpdateService()
+        
+        splash.update_progress(40, "Configurando gerenciador de UI...")
+        
+        # Inicializar UIManager
+        ui_manager = UIManagerImpl(update_service)
         
         splash.update_progress(50, "Configurando interface...")
         
         # Inicializar janela principal
-        main_window = MainWindow(bordero_service, file_service, backup_service)
+        main_window = MainWindow(bordero_service, file_service, backup_service, update_service, ui_manager)
         
         splash.update_progress(90, "Finalizando...")
         

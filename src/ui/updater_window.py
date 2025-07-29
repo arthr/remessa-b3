@@ -5,6 +5,7 @@ from tkinter import ttk, messagebox
 from ttkthemes import ThemedTk
 from ..config.settings import Settings
 from ..services.update_service import UpdateService
+from ..models.update import UpdateProgress
 from ..utils import centralizar_janela
 
 class UpdaterWindow:
@@ -14,7 +15,7 @@ class UpdaterWindow:
         
         self.root = ThemedTk(theme="azure")
         self.root.title(f"{self.settings.app_name} - Updater")
-        self.root.geometry("500x400")
+        self.root.geometry("500x300")
         self.root.resizable(False, False)
 
         self.download_url = download_url
@@ -26,7 +27,7 @@ class UpdaterWindow:
     
     def run(self):
         # Centralizar janela
-        centralizar_janela(self.root, 500, 400)
+        centralizar_janela(self.root, 500, 300)
         
         # Frame principal
         self.main_frame = ttk.Frame(self.root, padding=10)
@@ -74,16 +75,14 @@ class UpdaterWindow:
 
         self.root.mainloop()
     
-    # Atualizar progresso - TODO: Migrar para classe de UI
-    def atualizar_progresso(self, porcentagem, velocidade=""):
+    def atualizar_progresso(self, progress: UpdateProgress):
         """Atualiza a barra de progresso e exibe a velocidade"""
-        self.progress_var.set(porcentagem)
-        texto = f"Baixando: {porcentagem}%"
-        if velocidade:
-            texto += f" ({velocidade})"
+        self.progress_var.set(progress.porcentagem)
+        texto = f"Baixando: {progress.porcentagem}%"
+        if progress.velocidade:
+            texto += f" ({progress.velocidade})"
         self.progress_label.config(text=texto)
     
-    # Iniciar download - Essa função deveria estar aqui?
     def iniciar_download(self):
         """Inicia o download da atualização"""
         if not self.download_url:
@@ -92,9 +91,8 @@ class UpdaterWindow:
         
         # Iniciar o download
         self.atualizar_status("Iniciando download da nova versão...")
-        threading.Thread(target=self.update_service.download_update, args=(self.download_url, self.versao, self.atualizar_progresso, self.download_finalizado), daemon=True).start()
+        threading.Thread(target=self.update_service.download_update, args=(self.download_url, self.versao, self.atualizar_progresso), daemon=True).start()
     
-    # Callback de conclusão do download - Essa função deveria estar aqui?
     def download_finalizado(self, filepath):
         """Chamado quando o download é concluído"""
         if filepath:
@@ -117,14 +115,11 @@ class UpdaterWindow:
         else:
             self.atualizar_status("Erro ao instalar a atualização!")
    
-    # Atualizar status - TODO: Migrar para classe de UI
     def atualizar_status(self, mensagem):
         """Atualiza a mensagem de status"""
         self.status_label.config(text=mensagem)
         self.root.update_idletasks()
     
-    # Cancelar download - TODO: Migrar para classe de UI
-    # Isso deve ser um dialogo de confirmação
     def cancelar_download(self):
         """Cancela o download e fecha a aplicação"""
         if messagebox.askyesno("Cancelar Download", "Deseja realmente cancelar a atualização?"):

@@ -37,7 +37,7 @@ class UpdateAvailableDialog:
         
         # Informações da versão
         ttk.Label(main_frame, text=f"Versão atual: {self.settings.app_version}").pack(anchor="w", pady=2)
-        ttk.Label(main_frame, text=f"Nova versão: {self.update_info['versao']}").pack(anchor="w", pady=2)
+        ttk.Label(main_frame, text=f"Nova versão: {self.update_info.versao}").pack(anchor="w", pady=2)
 
         # Notas de lançamento
         ttk.Label(main_frame, text="Notas de lançamento:", font=("Segoe UI", 10, "bold")).pack(anchor="w", pady=5)
@@ -53,7 +53,7 @@ class UpdateAvailableDialog:
         notes_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.config(command=notes_text.yview)
         
-        notes_text.insert(tk.END, self.update_info['notas'])
+        notes_text.insert(tk.END, self.update_info.notas)
         notes_text.config(state=tk.DISABLED)
         
         # Botões
@@ -69,7 +69,7 @@ class UpdateAvailableDialog:
         ttk.Button(
             button_frame,
             text="Baixar e Instalar Automaticamente",
-            command=lambda: self.update_service.run_updater(self.update_info['download_url'], self.update_info['versao'], os.path.abspath(sys.executable))
+            command=lambda: self.update_service.run_updater(self.update_info.download_url, self.update_info.versao, os.path.abspath(sys.executable))
         ).pack(side=tk.LEFT, padx=5)
 
         # Botão de download manual
@@ -88,5 +88,5 @@ class UpdateAvailableDialog:
 
     def open_download_page(self, update_info):
         """Abre a página de download no navegador"""
-        webbrowser.open(update_info['url'])
+        webbrowser.open(update_info.url)
         self.root.destroy()
