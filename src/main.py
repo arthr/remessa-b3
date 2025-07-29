@@ -2,6 +2,7 @@
 import sys
 import os
 import tkinter as tk
+import threading
 from pathlib import Path
 
 # Adicionar o diretório src ao path
@@ -17,6 +18,7 @@ from services.update_service import UpdateService
 from ui.splash_screen import SplashScreen
 from ui.main_window import MainWindow
 from ui.ui_manager import UIManagerImpl
+from ui.dialogs.update_available import UpdateAvailableDialog
 
 def main():
     """Ponto de entrada principal da aplicação"""
@@ -43,6 +45,11 @@ def main():
         backup_service = BackupService()
         update_service = UpdateService()
         
+        splash.update_progress(30, "Verificando atualizações...")
+        
+        # Verificar atualizações em background
+        update_info = update_service.check_for_updates()
+        
         splash.update_progress(40, "Configurando gerenciador de UI...")
         
         # Inicializar UIManager
@@ -58,6 +65,11 @@ def main():
         # Fechar splash screen e mostrar janela principal
         splash.destroy()
         root.deiconify()  # Mostrar janela raiz se necessário
+        
+        # Verificar atualizações em segundo plano
+        if update_info.disponivel:
+            # Usar after para agendar na thread principal
+            root.after(1000, lambda: UpdateAvailableDialog(root, update_service))
         
         # Iniciar aplicação
         main_window.run()
