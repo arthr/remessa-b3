@@ -7,19 +7,19 @@ from tkinter import ttk
 import webbrowser
 from ...config.settings import Settings
 from ...services.update_service import UpdateService
-from ...utils import (
-    centralizar_janela
-)
+from ...utils import centralizar_janela
 
 class UpdateAvailableDialog:
-    def __init__(self, parent, update_info):
+    def __init__(self, parent, update_service: UpdateService):
         self.parent = parent
         self.root = tk.Toplevel(self.parent)
         self.settings = Settings()
         self.root.title(f"{self.settings.app_name} - Atualização Disponível")
         self.root.geometry("500x450")
-        self.update_info = update_info
-        self.update_service = UpdateService()
+        self.root.resizable(False, False)
+        
+        self.update_service = update_service
+        self.update_info = self.update_service.get_update_info()
         self.setup_ui()
         
         # Centralizar janela
@@ -56,28 +56,14 @@ class UpdateAvailableDialog:
         notes_text.insert(tk.END, self.update_info['notas'])
         notes_text.config(state=tk.DISABLED)
         
-        # Barra de progresso
-        self.setup_progress_bar()
-
         # Botões
         self.setup_buttons()
-
-    def setup_progress_bar(self):
-        """Configura a barra de progresso"""
-        progress_frame = ttk.Frame(self.root)
-        progress_frame.pack(fill=tk.X, pady=5)
-
-        progress_bar = ttk.Progressbar(progress_frame, mode='determinate', length=100)
-        progress_bar.pack(fill=tk.X, padx=5, pady=5)
-
-        progress_label = ttk.Label(progress_frame, text="Iniciando download...")
-        progress_label.pack(anchor="w", pady=2)
 
     def setup_buttons(self):
         """Configura os botões da janela"""
         # Frame para os botões
         button_frame = ttk.Frame(self.root)
-        button_frame.pack(fill=tk.X, pady=10)
+        button_frame.pack(fill=tk.X, pady=10, padx=5)
 
         # Botão de download
         ttk.Button(
@@ -98,7 +84,7 @@ class UpdateAvailableDialog:
             button_frame,
             text="Cancelar",
             command=self.root.destroy
-        ).pack(side=tk.LEFT, padx=5)
+        ).pack(side=tk.RIGHT, padx=5)
 
     def open_download_page(self, update_info):
         """Abre a página de download no navegador"""

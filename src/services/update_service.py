@@ -51,6 +51,7 @@ class UpdateService:
     def get_update_info(self):
         return self.update_info
 
+    # TODO: Corrigir a execução do updater.py
     def run_updater(self, download_url: str, versao: str, app_exec: str) -> None:
         """Executa o updater.py"""
         if not getattr(sys, 'frozen', False):
@@ -60,6 +61,10 @@ class UpdateService:
             ])
         else:
             subprocess.Popen(["updater.exe", download_url, versao, app_exec])
+        
+        # TODO: Finalizar migração do updater.py
+        # PAREI AQUI - RETOMAR
+        print(f"Executando o updater.py com os seguintes argumentos: {download_url}, {versao}, {app_exec}")
 
     def download_update(self, download_url: str, versao: str, 
                                    progress_callback=None, complete_callback=None) -> None:

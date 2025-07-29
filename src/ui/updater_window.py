@@ -4,20 +4,27 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 from ttkthemes import ThemedTk
 from ..config.settings import Settings
-from ..services import UpdateService
-from ..utils import (
-    centralizar_janela
-)
+from ..services.update_service import UpdateService
+from ..utils import centralizar_janela
 
 class UpdaterWindow:
-    def __init__(self, parent):
+    def __init__(self, parent, download_url, versao, app_exec, update_service: UpdateService):
         self.parent = parent
-        self.root = ThemedTk(theme="azure")
         self.settings = Settings()
-        self.update_service = UpdateService()
+        
+        self.root = ThemedTk(theme="azure")
         self.root.title(f"{self.settings.app_name} - Updater")
         self.root.geometry("500x400")
-        
+        self.root.resizable(False, False)
+
+        self.download_url = download_url
+        self.versao = versao
+        self.app_exec = app_exec
+        self.update_service = update_service
+
+        self.arquivo_baixado = None
+    
+    def run(self):
         # Centralizar janela
         centralizar_janela(self.root, 500, 400)
         
@@ -33,7 +40,7 @@ class UpdaterWindow:
         self.info_frame = ttk.Frame(self.main_frame)
         self.info_frame.pack(fill=tk.X, pady=5)
         
-        ttk.Label(self.info_frame, text=f"Baixando a versão: {self.settings.app_version}").pack(anchor="w", pady=2)
+        ttk.Label(self.info_frame, text=f"Baixando a versão: {self.versao}").pack(anchor="w", pady=2)
         
         # Barra de progresso
         self.progress_frame = ttk.Frame(self.main_frame)
@@ -64,6 +71,8 @@ class UpdaterWindow:
         
         # Iniciar automaticamente o download quando a interface estiver pronta
         self.root.after(500, self.iniciar_download)
+
+        self.root.mainloop()
     
     # Atualizar progresso - TODO: Migrar para classe de UI
     def atualizar_progresso(self, porcentagem, velocidade=""):
@@ -77,31 +86,27 @@ class UpdaterWindow:
     # Iniciar download - Essa função deveria estar aqui?
     def iniciar_download(self):
         """Inicia o download da atualização"""
-        global download_url, versao, destino
-        
-        if not download_url:
+        if not self.download_url:
             self.atualizar_status("URL de download inválida!")
             return
         
         # Iniciar o download
         self.atualizar_status("Iniciando download da nova versão...")
-        threading.Thread(target=self.update_service.download_update, args=(download_url, versao, self.atualizar_progresso, self.download_finalizado), daemon=True).start()
+        threading.Thread(target=self.update_service.download_update, args=(self.download_url, self.versao, self.atualizar_progresso, self.download_finalizado), daemon=True).start()
     
     # Callback de conclusão do download - Essa função deveria estar aqui?
     def download_finalizado(self, filepath):
         """Chamado quando o download é concluído"""
-        global arquivo_baixado
-
         if filepath:
-            arquivo_baixado = filepath
+            self.arquivo_baixado = filepath
         else:
-            arquivo_baixado = None
+            self.arquivo_baixado = None
 
         self.atualizar_status("Download concluído com sucesso!")
         self.progress_label.config(text="Download concluído!")
         
         # Modificar botão para instalar
-        self.cancelar_btn.config(text="Instalar Agora", command=lambda: self.install_update(arquivo_baixado, app_exec))
+        self.cancelar_btn.config(text="Instalar Agora", command=lambda: self.install_update(self.arquivo_baixado, self.app_exec))
     
     def install_update(self, arquivo_baixado, app_exec):
         """Instala a atualização substituindo o executável atual"""

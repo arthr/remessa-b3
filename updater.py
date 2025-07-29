@@ -1,151 +1,16 @@
 import sys
 import os
-import requests
-import time
-import threading
 import tkinter as tk
-from tkinter import ttk, messagebox
 from pathlib import Path
-import subprocess
-import json
 
 # Adicionar o diretório src ao sys.path para permitir importações
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
-from src.config.settings import Settings
-from src.services import UpdateService
-from src.utils import (
-    centralizar_janela
-)
-
-settings = Settings()
-update_service = UpdateService()
-
-# Variáveis globais
-download_url = None
-versao = None
-destino = None
-app_exec = None
-download_concluido = False
-arquivo_baixado = None
-
-class UpdaterApp:
-    def __init__(self, root):
-        self.root = root
-        self.root.title(f"{settings.app_name} - Updater")
-        self.root.geometry("500x400")
-        
-        # Centralizar janela
-        centralizar_janela(self.root, 500, 400)
-        
-        # Frame principal
-        self.main_frame = ttk.Frame(self.root, padding=10)
-        self.main_frame.pack(fill=tk.BOTH, expand=True)
-        
-        # Título
-        ttk.Label(self.main_frame, text="Atualizando o Sistema", 
-                 font=("Segoe UI", 12, "bold")).pack(pady=10)
-        
-        # Informações da versão
-        self.info_frame = ttk.Frame(self.main_frame)
-        self.info_frame.pack(fill=tk.X, pady=5)
-        
-        ttk.Label(self.info_frame, text=f"Baixando a versão: {versao}").pack(anchor="w", pady=2)
-        
-        # Barra de progresso
-        self.progress_frame = ttk.Frame(self.main_frame)
-        self.progress_frame.pack(fill=tk.X, pady=10)
-        
-        self.progress_var = tk.DoubleVar()
-        self.progress_bar = ttk.Progressbar(self.progress_frame, variable=self.progress_var, 
-                                           length=100, mode="determinate")
-        self.progress_bar.pack(fill=tk.X, padx=5, pady=5)
-        
-        self.progress_label = ttk.Label(self.progress_frame, text="Iniciando download...")
-        self.progress_label.pack(anchor="w", pady=2)
-        
-        # Frame de status
-        self.status_frame = ttk.Frame(self.main_frame)
-        self.status_frame.pack(fill=tk.X, pady=10)
-        
-        self.status_label = ttk.Label(self.status_frame, text="Aguardando...")
-        self.status_label.pack(anchor="w", pady=2)
-        
-        # Botões
-        self.button_frame = ttk.Frame(self.main_frame)
-        self.button_frame.pack(fill=tk.X, pady=10)
-        
-        self.cancelar_btn = ttk.Button(self.button_frame, text="Cancelar", 
-                                      command=self.cancelar_download)
-        self.cancelar_btn.pack(side=tk.RIGHT, padx=5)
-        
-        # Iniciar automaticamente o download quando a interface estiver pronta
-        self.root.after(500, self.iniciar_download)
-    
-    # Atualizar progresso - TODO: Migrar para classe de UI
-    def atualizar_progresso(self, porcentagem, velocidade=""):
-        """Atualiza a barra de progresso e exibe a velocidade"""
-        self.progress_var.set(porcentagem)
-        texto = f"Baixando: {porcentagem}%"
-        if velocidade:
-            texto += f" ({velocidade})"
-        self.progress_label.config(text=texto)
-    
-    # Iniciar download - Essa função deveria estar aqui?
-    def iniciar_download(self):
-        """Inicia o download da atualização"""
-        global download_url, versao, destino
-        
-        if not download_url:
-            self.atualizar_status("URL de download inválida!")
-            return
-        
-        # Iniciar o download
-        self.atualizar_status("Iniciando download da nova versão...")
-        threading.Thread(target=update_service.download_update, args=(download_url, versao, self.atualizar_progresso, self.download_finalizado), daemon=True).start()
-    
-    # Callback de conclusão do download - Essa função deveria estar aqui?
-    def download_finalizado(self, filepath):
-        """Chamado quando o download é concluído"""
-        global arquivo_baixado
-
-        if filepath:
-            arquivo_baixado = filepath
-        else:
-            arquivo_baixado = None
-
-        self.atualizar_status("Download concluído com sucesso!")
-        self.progress_label.config(text="Download concluído!")
-        
-        # Modificar botão para instalar
-        self.cancelar_btn.config(text="Instalar Agora", command=self.install_update)
-    
-    def install_update(self):
-        """Instala a atualização substituindo o executável atual"""
-        installed = update_service.install_update(arquivo_baixado, app_exec)
-        if installed:
-            self.atualizar_status("Atualização instalada com sucesso!")
-            self.root.quit()
-        else:
-            self.atualizar_status("Erro ao instalar a atualização!")
-   
-    # Atualizar status - TODO: Migrar para classe de UI
-    def atualizar_status(self, mensagem):
-        """Atualiza a mensagem de status"""
-        self.status_label.config(text=mensagem)
-        self.root.update_idletasks()
-    
-    # Cancelar download - TODO: Migrar para classe de UI
-    # Isso deve ser um dialogo de confirmação
-    def cancelar_download(self):
-        """Cancela o download e fecha a aplicação"""
-        if messagebox.askyesno("Cancelar Download", "Deseja realmente cancelar a atualização?"):
-            self.root.destroy()
+from src.ui.updater_window import UpdaterWindow
+from src.services.update_service import UpdateService
 
 def main():
     """Função principal do atualizador"""
-    global download_url, versao, app_exec
-    
     # Verificar argumentos
     if len(sys.argv) < 4:
         print("Uso: updater.py <download_url> <versao> <app_executable>")
@@ -156,10 +21,13 @@ def main():
     versao = sys.argv[2]
     app_exec = sys.argv[3]
     
+    update_service = UpdateService()
     # Iniciar interface
     root = tk.Tk()
-    app = UpdaterApp(root)
-    root.mainloop()
+    root.withdraw()  # Ocultar janela raiz
+    
+    updater_window = UpdaterWindow(root, download_url, versao, app_exec, update_service)
+    updater_window.run()
 
 if __name__ == "__main__":
     main()

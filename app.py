@@ -63,102 +63,6 @@ CONTA_ESCRITURADOR = settings.conta_escriturador
 CNPJ_TITULAR = settings.cnpj_titular
 RAZAO_TITULAR = settings.razao_titular
 
-# Update Service
-def verificar_atualizacao():
-    """Verifica se há uma nova versão disponível no GitHub"""
-    try:
-        headers = {}
-        if GITHUB_TOKEN:
-            headers["Authorization"] = f"token {GITHUB_TOKEN}"
-            
-        response = requests.get(GITHUB_API_URL, headers=headers, timeout=5)
-        if response.status_code == 200:
-            dados = response.json()
-            ultima_versao = dados.get('tag_name', '').lstrip('v')
-            
-            if version.parse(ultima_versao) > version.parse(APP_VERSION):
-                # Obter URL de download do executável
-                assets = dados.get('assets', [])
-                download_url = None
-                for asset in assets:
-                    if asset.get('name', '').endswith('.exe'):
-                        download_url = asset.get('browser_download_url')
-                        break
-                
-                return {
-                    'disponivel': True,
-                    'versao': ultima_versao,
-                    'url': dados.get('html_url', ''),
-                    'download_url': download_url,
-                    'notas': dados.get('body', 'Notas de lançamento não disponíveis.')
-                }
-        
-        return {'disponivel': False}
-    except Exception as e:
-        print(f"Erro ao verificar atualizações: {e}")
-        return {'disponivel': False}
-
-def instalar_atualizacao(arquivo_path, root):
-    """
-    Instala a atualização substituindo o executável atual
-    
-    Args:
-        arquivo_path: Caminho para o arquivo de atualização
-        root: Referência à janela principal Tkinter
-    
-    Returns:
-        bool: True se a instalação iniciou com sucesso
-    """
-    try:
-        # Obter o caminho do executável atual
-        current_exe = os.path.abspath(sys.executable)
-        is_frozen = getattr(sys, 'frozen', False)
-        
-        # Se não for um executável congelado (PyInstaller), estamos em modo desenvolvimento
-        if not is_frozen:
-            messagebox.showinfo("Modo Desenvolvimento", 
-                              "Executando em modo de desenvolvimento. A atualização seria aplicada no executável final.")
-            return True
-            
-        # No Windows, criar um script para substituir o executável após o fechamento
-        if os.name == 'nt':
-            # Criar um script batch para executar após o fechamento do aplicativo
-            updater_script = Path("updates") / "updater.bat"
-            with open(updater_script, 'w') as f:
-                f.write('@echo off\n')
-                f.write('echo Aguardando o encerramento da aplicacao...\n')
-                f.write(f'ping -n 3 127.0.0.1 > nul\n')  # Esperar ~3 segundos
-                f.write('echo Instalando atualizacao...\n')
-                # Tentar copiar várias vezes caso o arquivo esteja em uso
-                f.write(':retry\n')
-                f.write(f'copy /Y "{arquivo_path}" "{current_exe}" > nul\n')
-                f.write('if errorlevel 1 (\n')
-                f.write('    echo Erro na atualizacao, tentando novamente...\n')
-                f.write('    ping -n 2 127.0.0.1 > nul\n')
-                f.write('    goto retry\n')
-                f.write(')\n')
-                f.write('echo Atualizacao concluida!\n')
-                f.write(f'start "" "{current_exe}"\n')  # Iniciar a nova versão
-                f.write('del "%~f0"\n')  # Auto-destruir o script
-                
-            # Executar o script e fechar a aplicação
-            subprocess.Popen(['cmd', '/c', str(updater_script)], 
-                            shell=True, 
-                            creationflags=subprocess.CREATE_NEW_CONSOLE)
-            
-            # Informar e fechar a aplicação
-            messagebox.showinfo("Atualizando", "A atualização será instalada. A aplicação será reiniciada.")
-            root.quit()
-            return True
-        else:
-            # Para outros SOs, informar sobre a atualização
-            messagebox.showwarning("Atualização", 
-                                "Atualização automática não suportada neste sistema. Substitua manualmente o arquivo.")
-            return False
-    except Exception as e:
-        messagebox.showerror("Erro na atualização", f"Não foi possível atualizar: {e}")
-        return False
-
 # Main Window
 def interface():
     # Criar janela principal (inicialmente oculta)
@@ -623,7 +527,7 @@ def interface():
             
             ajuda_menu = tk.Menu(menu_bar, tearoff=0)
             menu_bar.add_cascade(label="Ajuda", menu=ajuda_menu)
-            ajuda_menu.add_command(label="Verificar Atualizações", command=lambda: threading.Thread(target=lambda: UpdateAvailableDialog(root, update_service.get_update_info()) if update_service.get_update_info()['disponivel'] else messagebox.showinfo("Atualização", "Você já está usando a versão mais recente."), daemon=True).start())
+            ajuda_menu.add_command(label="Verificar Atualizações", command=lambda: threading.Thread(target=lambda: UpdateAvailableDialog(root, update_service) if update_service.get_update_info()['disponivel'] else messagebox.showinfo("Atualização", "Você já está usando a versão mais recente."), daemon=True).start())
             ajuda_menu.add_command(label="Ver Configurações", command=mostrar_configuracoes)
             ajuda_menu.add_command(label="Sobre", command=sobre)
             
@@ -707,7 +611,7 @@ def interface():
             # Verificar atualizações em segundo plano
             if info_atualizacao['disponivel']:
                 # Usar after para agendar na thread principal
-                root.after(1000, lambda: UpdateAvailableDialog(root, info_atualizacao))
+                root.after(1000, lambda: UpdateAvailableDialog(root, update_service))
         except Exception as e:
             print(f"Erro durante a inicialização: {e}")
             # Garantir que a splash screen seja fechada mesmo em caso de erro
