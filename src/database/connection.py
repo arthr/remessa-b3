@@ -5,8 +5,8 @@ from ..config.settings import Settings
 from ..utils.config_utils import verificar_configuracoes_banco
 
 class DatabaseConnection:
-    def __init__(self):
-        self.settings = Settings()
+    def __init__(self, settings: Settings = None):
+        self.settings = settings or Settings()
     
     def connect(self) -> Optional[pyodbc.Connection]:
         try:

@@ -5,20 +5,21 @@ import tkinter as tk
 import threading
 from pathlib import Path
 
-# Adicionar o diretório src ao path
-sys.path.insert(0, str(Path(__file__).parent))
+# Adicionar o diretório raiz do projeto ao path
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from config.settings import Settings
-from config.constants import AppConstants
-from database.connection import DatabaseConnection
-from services.bordero_service import BorderoService
-from services.file_service import FileService
-from services.backup_service import BackupService
-from services.update_service import UpdateService
-from ui.splash_screen import SplashScreen
-from ui.main_window import MainWindow
-from ui.ui_manager import UIManagerImpl
-from ui.dialogs.update_available import UpdateAvailableDialog
+# Usar imports absolutos
+from src.config.settings import Settings
+from src.config.constants import AppConstants
+from src.database.connection import DatabaseConnection
+from src.services.bordero_service import BorderoService
+from src.services.file_service import FileService
+from src.services.backup_service import BackupService
+from src.services.update_service import UpdateService
+from src.ui.splash_screen import SplashScreen
+from src.ui.main_window import MainWindow
+from src.ui.ui_manager import UIManagerImpl
+from src.ui.dialogs.update_available import UpdateAvailableDialog
 
 def main():
     """Ponto de entrada principal da aplicação"""
@@ -39,8 +40,7 @@ def main():
         splash.update_progress(20, "Inicializando serviços...")
         
         # Inicializar serviços
-        db_connection = DatabaseConnection(settings)
-        bordero_service = BorderoService(db_connection)
+        bordero_service = BorderoService()
         file_service = FileService()
         backup_service = BackupService()
         update_service = UpdateService()
@@ -58,13 +58,19 @@ def main():
         splash.update_progress(50, "Configurando interface...")
         
         # Inicializar janela principal
-        main_window = MainWindow(bordero_service, file_service, backup_service, update_service, ui_manager)
+        main_window = MainWindow(
+            bordero_service,
+            file_service,
+            backup_service,
+            update_service,
+            ui_manager
+        )
         
         splash.update_progress(90, "Finalizando...")
         
         # Fechar splash screen e mostrar janela principal
         splash.destroy()
-        root.deiconify()  # Mostrar janela raiz se necessário
+        #root.deiconify()
         
         # Verificar atualizações em segundo plano
         if update_info.disponivel:
