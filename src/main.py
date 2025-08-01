@@ -68,9 +68,8 @@ def main():
         
         splash.update_progress(90, "Finalizando...")
         
-        # Fechar splash screen e mostrar janela principal
+        # Fechar splash screen
         splash.destroy()
-        #root.deiconify()
         
         # Verificar atualizações em segundo plano
         if update_info.disponivel:
@@ -82,6 +81,8 @@ def main():
         
     except Exception as e:
         print(f"Erro ao inicializar aplicação: {e}")
+        import traceback
+        traceback.print_exc()
         sys.exit(1)
 
 if __name__ == "__main__":
