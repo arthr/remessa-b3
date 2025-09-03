@@ -37,7 +37,38 @@ class BorderoQueries:
                     ELSE 'XX'
                 END AS Especie_Titulo,
                 tit.[BORDERO] AS Numero_Bordero,
+                        
+                tit.[ModoDeCobranca_ID] AS Cobranca_Id,
+
+                CASE WHEN tit.[ModoDeCobranca_ID] = 35 THEN 1
+                ELSE 0 END AS Is_Monkey,
+
                 tit.[DCTO] AS Numero_Titulo,
+
+                TRIM(tit.controleparticipante) AS Controle_Interno,
+
+                CASE
+                    -- há / ou -  → pega tudo antes do primeiro deles
+                    WHEN CHARINDEX('/', tit.controleparticipante) > 0 OR CHARINDEX('-', tit.controleparticipante) > 0
+                    THEN SUBSTRING(
+                            TRIM(tit.controleparticipante),
+                            1,
+                            CASE
+                                WHEN CHARINDEX('/', TRIM(tit.controleparticipante)) = 0 THEN CHARINDEX('-', TRIM(tit.controleparticipante)) - 1
+                                WHEN CHARINDEX('-', TRIM(tit.controleparticipante)) = 0 THEN CHARINDEX('/', TRIM(tit.controleparticipante)) - 1
+                                WHEN CHARINDEX('/', TRIM(tit.controleparticipante)) < CHARINDEX('-', TRIM(tit.controleparticipante))
+                                    THEN CHARINDEX('/', TRIM(tit.controleparticipante)) - 1
+                                ELSE CHARINDEX('-', TRIM(tit.controleparticipante)) - 1
+                            END
+                            )
+
+                    -- só dígitos → pega os últimos até 10, preservando zeros à esquerda
+                    WHEN TRIM(tit.controleparticipante) NOT LIKE '%[^0-9]%'
+                    THEN RIGHT(TRIM(tit.controleparticipante), CASE WHEN LEN(TRIM(tit.controleparticipante)) > 10 THEN 10 ELSE LEN(TRIM(tit.controleparticipante)) END)
+
+                    ELSE NULL -- opcional: casos que não se encaixam
+                END AS Documento_Encontrato,
+
                 tit.[NOTAFISCAL] AS Nota_Fiscal,
                 CONVERT(VARCHAR(8), tit.[DTBORDERO], 112) AS Data_Operacao,
                 CONVERT(VARCHAR(8), tit.[DATA], 112) AS Data_Vencimento,
@@ -71,10 +102,13 @@ class BorderoQueries:
                 [wba].[dbo].[SIGFIDC] sfidc ON tit.ctrl_id = sfidc.sigfls
             WHERE 
                 1=1
-                -- Removido o filtro que excluía registros pagos - agora mostra todos com situação
+                -- Apenas Títulos em ABERTO podem ser registrados.
+                AND (COALESCE(sflu.BANCO, sfidc.BANCO) IS NULL OR COALESCE(sflu.BANCO, sfidc.BANCO) = '  ' OR COALESCE(sflu.BANCO, sfidc.BANCO) = '')
                 AND (tit.rejeitado NOT IN ('X', 'S') OR tit.rejeitado IS NULL)
                 AND bor.dtliberacao IS NOT NULL
                 AND td.tipodcto IN ('DM', 'DS')
+                --AND tit.[ModoDeCobranca_ID] IN (35) -- Monkey
+                --AND tit.Carteira_ID = 0
         ),
         Titulos_Nfe AS (
             SELECT
@@ -88,9 +122,9 @@ class BorderoQueries:
                 [wba].[dbo].[nfeimportada] a
             INNER JOIN 
                 [wba].[dbo].[nfeimportadaxsigfls] b ON b.nfeimportada_id = a.ctrl_id
-        
+                
             UNION ALL
-        
+                
             SELECT
                 a.numero,
                 a.serie,
@@ -103,7 +137,7 @@ class BorderoQueries:
             INNER JOIN 
                 [wba].[dbo].[NFeImportadaXSigflsMultiplasNFes] b ON b.NFeImportada_ID = a.Ctrl_ID
         )
-        
+                
         SELECT 
             Id,
             Carteira_ID,
@@ -135,8 +169,21 @@ class BorderoQueries:
             Data_Operacao,
             Numero_Bordero,
             Pagamento,
-            ISNULL(Numero_Titulo, '') Numero_Titulo,
-            ISNULL(Nota_Fiscal, '') Nota_Fiscal,
+            Controle_Interno,
+            Documento_Encontrato,
+
+            CASE
+                WHEN TRY_CAST(Numero_Titulo AS INT) IS NULL AND Is_Monkey > 0
+                THEN Documento_Encontrato
+                ELSE ISNULL(Numero_Titulo, '')
+            END Numero_Titulo,
+                    
+            CASE
+                WHEN TRY_CAST(Nota_Fiscal AS INT) IS NULL  AND Is_Monkey > 0
+                THEN Documento_Encontrato
+                ELSE ISNULL(Nota_Fiscal, '')
+            END Nota_Fiscal,
+
             ISNULL(Chave, '') Chave,
             Bordero,
             ISNULL(Numero, '') Numero,

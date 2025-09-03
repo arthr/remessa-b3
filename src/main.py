@@ -3,6 +3,7 @@ import sys
 import os
 import tkinter as tk
 import threading
+import time
 from pathlib import Path
 
 # Adicionar o diretório raiz do projeto ao path
@@ -16,6 +17,7 @@ from src.services.bordero_service import BorderoService
 from src.services.file_service import FileService
 from src.services.backup_service import BackupService
 from src.services.update_service import UpdateService
+from src.services.history_service import HistoryService
 from src.ui.splash_screen import SplashScreen
 from src.ui.main_window import MainWindow
 from src.ui.ui_manager import UIManagerImpl
@@ -23,7 +25,13 @@ from src.ui.dialogs.update_available import UpdateAvailableDialog
 
 def main():
     """Ponto de entrada principal da aplicação"""
+    main_window = None
+    splash = None
+    root = None
+    
     try:
+        print("Iniciando aplicação...")
+        
         # Criar janela raiz temporária para a splash screen
         root = tk.Tk()
         root.withdraw()  # Ocultar a janela raiz
@@ -37,25 +45,34 @@ def main():
         # Carregar configurações
         settings = Settings()
         
-        splash.update_progress(20, "Inicializando serviços...")
+        splash.update_progress(20, "Inicializando BorderoService...")
         
-        # Inicializar serviços
+        # Inicializar serviços com progresso detalhado
         bordero_service = BorderoService()
+        
+        splash.update_progress(30, "Inicializando FileService...")
         file_service = FileService()
+        
+        splash.update_progress(40, "Inicializando BackupService...")
         backup_service = BackupService()
+        
+        splash.update_progress(50, "Inicializando HistoryService...")
+        history_service = HistoryService()
+        
+        splash.update_progress(60, "Inicializando UpdateService...")
         update_service = UpdateService()
         
-        splash.update_progress(30, "Verificando atualizações...")
+        splash.update_progress(70, "Verificando atualizações...")
         
         # Verificar atualizações em background
         update_info = update_service.check_for_updates()
         
-        splash.update_progress(40, "Configurando gerenciador de UI...")
+        splash.update_progress(80, "Configurando gerenciador de UI...")
         
         # Inicializar UIManager
         ui_manager = UIManagerImpl(update_service)
         
-        splash.update_progress(50, "Configurando interface...")
+        splash.update_progress(90, "Configurando interface principal...")
         
         # Inicializar janela principal
         main_window = MainWindow(
@@ -66,10 +83,14 @@ def main():
             ui_manager
         )
         
-        splash.update_progress(90, "Finalizando...")
+        splash.update_progress(95, "Finalizando...")
+        time.sleep(0.5)  # Pequena pausa para mostrar 95%
         
         # Fechar splash screen
         splash.destroy()
+        
+        # Mostrar a janela principal
+        root.deiconify()
         
         # Verificar atualizações em segundo plano
         if update_info.disponivel:
@@ -79,11 +100,41 @@ def main():
         # Iniciar aplicação
         main_window.run()
         
+    except KeyboardInterrupt:
+        print("Interrupção detectada, encerrando...")
     except Exception as e:
         print(f"Erro ao inicializar aplicação: {e}")
         import traceback
         traceback.print_exc()
-        sys.exit(1)
+    finally:
+        # Garantir encerramento limpo
+        print("Finalizando aplicação...")
+        
+        try:
+            if splash:
+                splash.destroy()
+        except:
+            pass
+            
+        try:
+            if main_window:
+                main_window.is_running = False
+                main_window.cancel_all_events()
+        except:
+            pass
+            
+        try:
+            if root:
+                root.quit()
+                root.destroy()
+        except:
+            pass
+        
+        # Forçar saída limpa
+        try:
+            os._exit(0)
+        except:
+            sys.exit(0)
 
 if __name__ == "__main__":
     main()

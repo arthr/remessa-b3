@@ -44,16 +44,9 @@ class MainWindow:
         self.gerar_botao = None
         self.abrir_botao = None
         
-        # Controle de thread para file dialog
-        self.solicitar_arquivo = False
-        self.arquivo_selecionado = None
-        
         self.root = ThemedTk(theme="azure")
         self.setup_ui()
         self.carregar_historico()
-        
-        # Iniciar polling para verificar solicitação de arquivo
-        self.verificar_solicitacao_arquivo()
     
     def setup_ui(self):
         """Configura a interface principal"""
@@ -78,6 +71,18 @@ class MainWindow:
         
         # Configurar barra de status
         self.setup_status_bar()
+        
+        # Configurar handler de fechamento
+        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
+    
+    def on_closing(self):
+        """Handler para fechamento da janela"""
+        print("Encerrando aplicação...")
+        try:
+            self.root.quit()
+            self.root.destroy()
+        except:
+            pass
     
     def setup_menu(self):
         """Configura o menu da aplicação"""
@@ -221,7 +226,7 @@ class MainWindow:
                 self.root.after(0, lambda: self.atualizar_status("Executando consulta...", "info"))
                 self.root.after(0, lambda: self.mostrar_progresso(40))
 
-                # Executa a consulta
+                # Executa a consulta usando BorderoService
                 dados = self.bordero_service.consultar_bordero(bordero, carteira_id)
                 
                 if not dados:
@@ -242,47 +247,45 @@ class MainWindow:
 
                 self.root.after(0, lambda: self.mostrar_progresso(60))
                 
-                # Selecionar nome do arquivo para salvar - usar flag para solicitar na thread principal
+                # Selecionar nome do arquivo para salvar - usar dialog direto como no app.py
                 self.root.after(0, lambda: self.atualizar_status("Selecionando arquivo para salvar...", "info"))
                 self.root.after(0, lambda: self.mostrar_progresso(70))
                 
-                # Usar uma flag para solicitar o dialog na thread principal
-                self.solicitar_arquivo = True
-                self.dados_para_geracao = dados
-                self.bordero_para_geracao = bordero
-                
-                # Aguardar resposta da thread principal
-                while hasattr(self, 'solicitar_arquivo') and self.solicitar_arquivo:
-                    import time
-                    time.sleep(0.1)
-                
-                # Verificar se o usuário cancelou
-                if not hasattr(self, 'arquivo_selecionado') or not self.arquivo_selecionado:
+                # Usar dialog direto na thread principal (como no app.py)
+                arquivo_nome = filedialog.asksaveasfilename(
+                    title="Salvar Arquivo de Posições",
+                    defaultextension=".txt",
+                    filetypes=[("Arquivos de Texto", "*.txt")]
+                )
+
+                # Se o usuário cancelou a seleção do arquivo, cancela a geração
+                if not arquivo_nome:
                     self.root.after(0, lambda: self.atualizar_status("Geração cancelada pelo usuário.", "info"))
                     return
 
-                # Continuar com a geração
-                self.root.after(0, lambda: self.atualizar_status("Gerando arquivo, aguarde...", "info"))
-                self.root.after(0, lambda: self.mostrar_progresso(80))
+                # Se o usuário selecionou um arquivo, continua a geração
+                if arquivo_nome:
+                    self.root.after(0, lambda: self.atualizar_status("Gerando arquivo, aguarde...", "info"))
+                    self.root.after(0, lambda: self.mostrar_progresso(80))
 
-                # Gera o arquivo remessa de posições
-                self.file_service.gerar_arquivo(dados, self.arquivo_selecionado)
-                self.arquivo_salvo = self.arquivo_selecionado
-                
-                # Criar backup do arquivo
-                backup_path = self.backup_service.criar_backup(self.arquivo_selecionado, bordero)
-                
-                # Reabilita o botão de geração
-                self.root.after(0, lambda: self.abrir_botao.config(state="normal"))
+                    # Gera o arquivo remessa de posições usando FileService
+                    self.file_service.gerar_arquivo(dados, arquivo_nome)
+                    self.arquivo_salvo = arquivo_nome
+                    
+                    # Criar backup do arquivo usando BackupService
+                    backup_path = self.backup_service.criar_backup(arquivo_nome, bordero)
+                    
+                    # Reabilita o botão de geração
+                    self.root.after(0, lambda: self.abrir_botao.config(state="normal"))
 
-                # Atualiza a barra de progresso e a mensagem de status
-                self.root.after(0, lambda: self.mostrar_progresso(100))
-                self.root.after(0, lambda: self.atualizar_status("Arquivo gerado com sucesso!", "success"))
-                
-                # Adicionar ao histórico com informação do backup
-                info_backup = f" (Backup: {os.path.basename(backup_path)})" if backup_path else ""
-                self.history_service.adicionar_historico(f"Arquivo gerado: {self.arquivo_selecionado} (Borderô: {bordero}){info_backup}")
-                self.root.after(0, self.atualizar_lista_historico)
+                    # Atualiza a barra de progresso e a mensagem de status
+                    self.root.after(0, lambda: self.mostrar_progresso(100))
+                    self.root.after(0, lambda: self.atualizar_status("Arquivo gerado com sucesso!", "success"))
+                    
+                    # Adicionar ao histórico com informação do backup usando HistoryService
+                    info_backup = f" (Backup: {os.path.basename(backup_path)})" if backup_path else ""
+                    self.history_service.adicionar_historico(f"Arquivo gerado: {arquivo_nome} (Borderô: {bordero}){info_backup}")
+                    self.root.after(0, self.atualizar_lista_historico)
                 
             except Exception as e:
                 self.root.after(0, lambda: self.atualizar_status(f"Erro: {str(e)}", "error"))
@@ -296,25 +299,6 @@ class MainWindow:
 
         # Iniciar processo em thread separada
         threading.Thread(target=processo_geracao, daemon=True).start()
-    
-    def verificar_solicitacao_arquivo(self):
-        """Verifica se há solicitação de arquivo e abre o dialog na thread principal"""
-        if hasattr(self, 'solicitar_arquivo') and self.solicitar_arquivo:
-            self.solicitar_arquivo = False
-            
-            arquivo_nome = filedialog.asksaveasfilename(
-                title="Salvar Arquivo de Posições",
-                defaultextension=".txt",
-                filetypes=[("Arquivos de Texto", "*.txt")]
-            )
-            
-            if arquivo_nome:
-                self.arquivo_selecionado = arquivo_nome
-            else:
-                self.arquivo_selecionado = None
-        
-        # Agendar próxima verificação
-        self.root.after(100, self.verificar_solicitacao_arquivo)
     
     def abrir_backup(self):
         """Abre a janela para selecionar e abrir um arquivo de backup"""
@@ -588,4 +572,12 @@ class MainWindow:
     
     def run(self):
         """Executa a janela principal"""
-        self.root.mainloop()
+        try:
+            print("Iniciando aplicação principal...")
+            self.root.mainloop()
+        except KeyboardInterrupt:
+            print("Interrupção detectada, encerrando...")
+        except Exception as e:
+            print(f"Erro na aplicação principal: {e}")
+        finally:
+            print("Finalizando aplicação principal...")
