@@ -43,11 +43,20 @@ class BorderoQueries:
                 CASE WHEN tit.[ModoDeCobranca_ID] = 35 THEN 1
                 ELSE 0 END AS Is_Monkey,
 
+				CASE WHEN gs.idgrupo = 24 THEN 1
+				ELSE 0 END AS Is_CasasBahia,
+
                 tit.[DCTO] AS Numero_Titulo,
 
                 TRIM(tit.controleparticipante) AS Controle_Interno,
 
                 CASE
+					-- tratamento títulos casa bahia, extrapolam os 10 dígitos do número de documento
+					WHEN gs.idgrupo = 24 THEN
+						CASE
+							WHEN LEN(TRIM(tit.[DCTO])) > 10 THEN TRIM(tit.NOTAFISCAL)
+							ELSE tit.[DCTO]
+						END
                     -- há / ou -  → pega tudo antes do primeiro deles
                     WHEN CHARINDEX('/', tit.controleparticipante) > 0 OR CHARINDEX('-', tit.controleparticipante) > 0
                     THEN SUBSTRING(
@@ -65,7 +74,7 @@ class BorderoQueries:
                     -- só dígitos → pega os últimos até 10, preservando zeros à esquerda
                     WHEN TRIM(tit.controleparticipante) NOT LIKE '%[^0-9]%'
                     THEN RIGHT(TRIM(tit.controleparticipante), CASE WHEN LEN(TRIM(tit.controleparticipante)) > 10 THEN 10 ELSE LEN(TRIM(tit.controleparticipante)) END)
-
+					
                     ELSE NULL -- opcional: casos que não se encaixam
                 END AS Documento_Encontrato,
 
@@ -94,6 +103,8 @@ class BorderoQueries:
                 [wba].[dbo].[SIGCAD] ced ON tit.CLIFOR = ced.CODIGO
             LEFT JOIN 
                 [wba].[dbo].[SIGCAD] sac ON tit.SACADO = sac.CODIGO
+			LEFT JOIN
+				[wba].[dbo].[GrupoEmpresa] gs ON sac.codigo = gs.clifor
             JOIN 
                 [wba].[dbo].[Carteira] cart ON cart.NumeroCarteira = tit.Carteira_ID
             LEFT JOIN 
@@ -173,7 +184,9 @@ class BorderoQueries:
             Documento_Encontrato,
 
             CASE
-                WHEN TRY_CAST(Numero_Titulo AS INT) IS NULL AND Is_Monkey > 0
+                WHEN 
+					(TRY_CAST(Numero_Titulo AS INT) IS NULL AND Is_Monkey > 0) OR 
+					(LEN(TRIM(Numero_Titulo)) > 10 AND Is_CasasBahia > 0)
                 THEN Documento_Encontrato
                 ELSE ISNULL(Numero_Titulo, '')
             END Numero_Titulo,
